@@ -3,7 +3,6 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchmetrics import F1
 from einops import rearrange
 
 from datasets_turntaking.utils import find_island_idx_len
