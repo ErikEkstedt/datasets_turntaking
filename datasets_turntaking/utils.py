@@ -1,5 +1,4 @@
-from os.path import basename
-from subprocess import run
+from os.path import basename, dirname
 from omegaconf import OmegaConf
 import json
 
@@ -61,11 +60,9 @@ def repo_root():
     """
     Returns the absolute path to the git repository
     """
-    return (
-        run(["git", "rev-parse", "--show-toplevel"], capture_output=True)
-        .stdout.decode()
-        .strip()
-    )
+    root = dirname(__file__)
+    root = dirname(root)
+    return root
 
 
 def write_json(data, filename):

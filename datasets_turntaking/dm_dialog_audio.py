@@ -26,6 +26,9 @@ from datasets_turntaking.utils import (
 )
 from datasets_turntaking.features.vad import VadProjection, VAD
 
+
+DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
+
 # TODO: transforms -> noise
 # TODO: Config
 # TODO: VAD-history
@@ -781,7 +784,7 @@ class DialogAudioDM(pl.LightningDataModule):
 
     @staticmethod
     def default_config_path():
-        return join(repo_root(), "config/dset_dialog_audio.yaml")
+        return DEFAULT_CONFIG
 
     @staticmethod
     def load_config(path=None, args=None, format="dict") -> Dict:
