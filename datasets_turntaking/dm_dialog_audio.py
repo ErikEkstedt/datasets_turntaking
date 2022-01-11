@@ -312,15 +312,15 @@ class DialogIterable(IterableDataset):
 
         ret = {
             "waveform": wav,
-            "vad": tmp_vad,  # add batch dimension
-            "vad_label": tmp_vad_labels,
+            "vad": tmp_vad.unsqueeze(0),  # add batch dimension
+            "vad_label": tmp_vad_labels.unsqueeze(0),
             "speaker": focus_speaker,
             "dataset_name": b["dataset_name"],
             "session": b["session"],
         }
 
         if self.vad_history:
-            ret["vad_history"] = tmp_vad_history
+            ret["vad_history"] = tmp_vad_history.unsqueeze(0)
 
         return ret
 
@@ -743,13 +743,13 @@ class DialogAudioDM(pl.LightningDataModule):
             "session": sessions,
         }
         if len(vad) > 0:
-            ret["vad"] = torch.stack(vad)
+            ret["vad"] = torch.cat(vad)
 
         if len(vad_history) > 0:
-            ret["vad_history"] = torch.stack(vad_history)
+            ret["vad_history"] = torch.cat(vad_history)
 
         if len(vad_label) > 0:
-            ret["vad_label"] = torch.stack(vad_label)
+            ret["vad_label"] = torch.cat(vad_label)
 
         return ret
 
@@ -895,6 +895,7 @@ class DEBUG:
 
     @staticmethod
     def debug_dset_ipu():
+
         dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
         dset = DialogIPU(
             dset_hf,
@@ -923,6 +924,7 @@ class DEBUG:
             train: 209531 (~2.2 times overlap 2 seconds)
             val: 23558
         """
+
         import matplotlib.pyplot as plt
         from tqdm import tqdm
         from datasets_turntaking.features.plot_utils import plot_vad_sample
@@ -954,6 +956,14 @@ class DEBUG:
         )
         dm.prepare_data()
         dm.setup()
+
+        batch = next(iter(dm.val_dataloader()))
+        for k, v in batch.items():
+            if isinstance(v, torch.Tensor):
+                print(f"{k}: {tuple(v.shape)}")
+            else:
+                print(f"{k}: {v}")
+
         n = 0
         pbar = tqdm(dm.train_dataloader(), desc="N: 0")
         for d in pbar:
