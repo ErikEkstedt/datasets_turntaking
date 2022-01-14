@@ -144,6 +144,7 @@ class DialogIterable(IterableDataset):
     def __init__(
         self,
         dataset,
+        feature_extractor=None,
         audio_mono=True,
         audio_duration=10,
         audio_normalize=True,
@@ -159,6 +160,7 @@ class DialogIterable(IterableDataset):
     ):
         super().__init__()
         self.dataset = dataset  # included datasets
+        self.feature_extractor = feature_extractor
 
         # Audio (waveforms)
         self.audio_mono = audio_mono
@@ -318,6 +320,10 @@ class DialogIterable(IterableDataset):
             "dataset_name": b["dataset_name"],
             "session": b["session"],
         }
+
+        if self.feature_extractor is not None:
+            features = self.feature_extractor(wav)
+            ret["features"] = features
 
         if self.vad_history:
             ret["vad_history"] = tmp_vad_history.unsqueeze(0)
@@ -810,25 +816,29 @@ def quick_load_dm(batch_size=1, num_workers=0):
     parser = ArgumentParser()
     parser = DialogAudioDM.add_data_specific_args(parser)
     args = parser.parse_args()
-    args.batch_size = batch_size
-    args.num_workers = num_workers
-    for k, v in vars(args).items():
-        print(f"{k}: {v}")
-    print("-" * 50)
-    argdict = vars(args)
+
+    data_conf = DialogAudioDM.load_config(path=args.data_conf, args=args)
+    print_dm(data_conf, args)
     dm = DialogAudioDM(
-        datasets=argdict["dataset.datasets"],
-        audio_duration=argdict["dataset.audio_duration"],
-        audio_overlap=argdict["dataset.audio_overlap"],
-        audio_normalize=argdict["dataset.audio_normalize"],
-        audio_include_ratio=argdict["dataset.audio_include_ratio"],
-        sample_rate=argdict["dataset.sample_rate"],
-        vad_hop_time=argdict["dataset.vad_hop_time"],
-        vad_bin_sizes=argdict["dataset.vad_bin_sizes"],
+        datasets=data_conf["dataset"]["datasets"],
+        type=data_conf["dataset"]["type"],
+        audio_duration=data_conf["dataset"]["audio_duration"],
+        audio_normalize=data_conf["dataset"]["audio_normalize"],
+        audio_overlap=data_conf["dataset"]["audio_overlap"],
+        audio_include_ratio=data_conf["dataset"]["audio_include_ratio"],
+        audio_context_duration=data_conf["dataset"]["audio_context_duration"],
+        ipu_min_time=data_conf["dataset"]["ipu_min_time"],
+        ipu_pause_time=data_conf["dataset"]["ipu_pause_time"],
+        sample_rate=data_conf["dataset"]["sample_rate"],
+        vad_hop_time=data_conf["dataset"]["vad_hop_time"],
+        vad_bin_sizes=data_conf["dataset"]["vad_bin_sizes"],
+        vad_history=data_conf["dataset"]["vad_history"],
+        vad_history_times=data_conf["dataset"]["vad_history_times"],
         batch_size=batch_size,
         num_workers=num_workers,
     )
     dm.prepare_data()
+    dm.setup()
     return dm
 
 
@@ -875,9 +885,15 @@ def quick_load_dataloader(split="val", batch_size=1, num_workers=0, vad_history=
 class DEBUG:
     @staticmethod
     def debug_dset_sliding():
+
+        from datasets_turntaking.features.open_smile import OpenSmile
+
+        feater = OpenSmile("emobase", sample_rate=16000, normalize=True)
+
         dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
         dset = DialogSlidingWindow(
             dataset=dset_hf,
+            feature_extractor=feater,
             audio_duration=10,
             audio_overlap=2,
             sample_rate=16000,

@@ -8,6 +8,10 @@ import torchaudio.functional as AF
 from torchaudio.backend.sox_io_backend import info as info_sox
 
 
+def time2frames(t, sample_rate):
+    return int(t * sample_rate)
+
+
 def time2sample(t, sr):
     return int(t * sr)
 
