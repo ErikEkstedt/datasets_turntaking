@@ -46,9 +46,9 @@ def load_waveform(
     if normalize:
         if x.shape[0] > 1:
             x[0] /= x[0].abs().max()
+            x[1] /= x[1].abs().max()
         else:
             x[0] /= x[0].abs().max()
-            x[1] /= x[1].abs().max()
 
     if mono and x.shape[0] > 1:
         x = x.mean(dim=0).unsqueeze(0)
