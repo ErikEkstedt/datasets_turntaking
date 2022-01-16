@@ -130,76 +130,78 @@ def callhome_regexp(s):
     return s
 
 
+def preprocess_utterance(filepath):
+    """
+    Load filepath and preprocess the annotations
+
+    * Omit empty rows
+    * join utterances spanning multiple lines
+    """
+    data = []
+    for row in read_txt(filepath):
+        # omit empty rows and rows starting with '#' (global file info)
+        if row == "" or row.startswith("#"):
+            continue
+
+        # Some utterances span multiple rows:
+        # i.e. evaltest/en_6467.txt
+        #
+        # 462.58 468.59 B: That's were, that's where I guess, they would, %um, they
+        # get involved in initial public offering, stock offerings
+        if row[0].isdigit():
+            data.append(row)
+        else:
+            data[-1] += " " + row
+    return data
+
+
 def load_utterances(filepath, clean=True):
-    data = read_txt(filepath)
+    data = preprocess_utterance(filepath)
 
     last_speaker = None
     utterances = []
-    for row in data:
-        # TODO: get this right
-        # example evaltest/en_6467.txt
-        # file start with hashtag+information
-        # #Language: eng
-        # #File id: 6467
-        # #Starting at 383 Ending at 983
-        # # 327 393 #BEGIN
-        # # 973 983 #END
-        m = re.match(r"^\#", row)
-        if row == "" or m:
-            continue
-        # example spanning multiple rows
-        # 462.58 468.59 B: That's were, that's where I guess, they would, %um, they
-        # get involved in initial public offering, stock offerings
-        split = row.split(" ")
-        try:
+    try:
+        for row in data:
+            split = row.split(" ")
             start, end, = (
                 float(split[0]),
                 float(split[1]),
             )
-        except:
-            print(filepath)
-            print(row)
-            input()
-        speaker = split[2].replace(":", "")
-        speaker = 0 if speaker == "A" else 1
-        text = " ".join(split[3:])
-        if clean:
-            text = callhome_regexp(text)
-
-        if last_speaker is None:
-            utterances.append(
-                {"start": start, "end": end, "speaker": speaker, "text": text}
-            )
-        elif last_speaker == speaker:
-            utterances[-1]["end"] = end
-            utterances[-1]["text"] += " " + text
-        else:
-            utterances.append(
-                {"start": start, "end": end, "speaker": speaker, "text": text}
-            )
-        last_speaker = speaker
+            speaker = split[2].replace(":", "")
+            speaker = 0 if speaker == "A" else 1
+            text = " ".join(split[3:])
+            if clean:
+                text = callhome_regexp(text)
+            if last_speaker is None:
+                utterances.append(
+                    {"start": start, "end": end, "speaker": speaker, "text": text}
+                )
+            elif last_speaker == speaker:
+                utterances[-1]["end"] = end
+                utterances[-1]["text"] += " " + text
+            else:
+                utterances.append(
+                    {"start": start, "end": end, "speaker": speaker, "text": text}
+                )
+            last_speaker = speaker
+    except:
+        print(f"CALLHOME UTILS load_utterance")
+        print(f"ERROR on split {filepath}")
     return utterances
 
 
-def some_test_later():
-    s = "hello &ibm {laugh} so %um ((unintelligible)) (( )) and call <German Feldmessen>. --"
-    s = "hello <German Feldmessen>. yes indeed <German Feldmessen>."
-    s = "I ((sent her to)) ((Taiwa)) she was "
-    print(s)
-    s = callhome_regexp(s)
-    print(s)
-
-    s = "#Lanugage"
-    s = "# Lanugage"
-    s = "Lanugage and #"
-    m = re.match(r"^\#", s)
-    if m:
-        print(m)
+def extract_vad(utterances):
+    vad = [[], []]
+    for utt in utterances:
+        vad[utt["speaker"]].append((utt["start"], utt["end"]))
+    return vad
 
 
 if __name__ == "__main__":
 
     filepath = "/home/erik/projects/data/callhome/callhome_english_trans_970711/transcrpt/train/en_4065.txt"
+    filepath = "/home/erik/projects/data/callhome/callhome_english_trans_970711/transcrpt/train/en_4926.txt"
     utterances = load_utterances(filepath)
-    for utt in utterances:
-        print(utt["text"])
+    vad = extract_vad(utterances)
+    print("vad 0: ", len(vad[0]))
+    print("vad 1: ", len(vad[1]))

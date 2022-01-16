@@ -5,14 +5,35 @@ from typing import List
 import datasets
 from datasets import Value, Sequence
 
-from datasets_turntaking.callhome.utils import load_utterances
+from datasets_turntaking.callhome.utils import load_utterances, extract_vad
 
 logger = datasets.logging.get_logger(__name__)
 
 _DESCRIPTION = """ CALLHOME """
-_CITATION = """ citation """
-_HOMEPAGE = """ Homepage """
-_URL = "url"
+_CITATION = """ 
+Canavan, Alexandra, David Graff, and George Zipperlen. 
+CALLHOME American English Speech LDC97S42. 
+Web Download. Philadelphia: Linguistic Data Consortium, 1997.
+"""
+_HOMEPAGE = "https://catalog.ldc.upenn.edu/LDC97S42"
+_URL = "https://catalog.ldc.upenn.edu/LDC97S42"
+
+
+FEATURES = {
+    "session": Value("string"),
+    "audio_path": Value("string"),
+    "vad": [
+        [Sequence(Value("float"))],
+    ],
+    "dialog": Sequence(
+        {
+            "text": Value("string"),
+            "speaker": Value("int32"),
+            "start": Value("float"),
+            "end": Value("float"),
+        }
+    ),
+}
 
 
 class CallHomeConfig(datasets.BuilderConfig):
@@ -24,23 +45,11 @@ class CallHome(datasets.GeneratorBasedBuilder):
     BUILDER_CONFIGS = [CallHomeConfig(name="default", description="CALLHOME")]
 
     def _info(self):
-        features = {
-            "id": Value("string"),
-            "file": Value("string"),
-            "dialog": Sequence(
-                {
-                    "text": Value("string"),
-                    "speaker": Value("int32"),
-                    "start": Value("float"),
-                    "end": Value("float"),
-                }
-            ),
-        }
         return datasets.DatasetInfo(
             description=_DESCRIPTION,
             homepage=_HOMEPAGE,
             citation=_CITATION,
-            features=datasets.Features(features),
+            features=datasets.Features(FEATURES),
             supervised_keys=None,
         )
 
@@ -61,9 +70,9 @@ class CallHome(datasets.GeneratorBasedBuilder):
             tmp_audio_path = join(audio_path, folder)
             tmp_text_path = join(text_path, folder.replace("evltest", "evaltest"))
             for file in os.listdir(tmp_audio_path):
-                if file.endswith(".sph"):
-                    sample = {"audio": join(tmp_audio_path, file)}
-                    txt = join(tmp_text_path, file.replace(".sph", ".txt"))
+                if file.endswith(".wav"):
+                    sample = {"audio_path": join(tmp_audio_path, file)}
+                    txt = join(tmp_text_path, file.replace(".wav", ".txt"))
                     if exists(txt):
                         sample["text"] = txt
                     splits[split].append(sample)
@@ -98,10 +107,12 @@ class CallHome(datasets.GeneratorBasedBuilder):
         clean = True
 
         for sample in filepaths:
-            id = basename(sample["audio"]).replace(".sph", "")
-            dialog = load_utterances(sample["text"], clean)
+            id = basename(sample["audio_path"]).replace(".sph", "")
+            utterances = load_utterances(sample["text"], clean)
+            vad = extract_vad(utterances)
             yield id, {
-                "id": id,
-                "file": sample["audio"],
-                "dialog": dialog,
+                "session": id,
+                "vad": vad,
+                "audio_path": sample["audio_path"],
+                "dialog": utterances,
             }

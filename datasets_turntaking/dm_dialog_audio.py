@@ -17,6 +17,7 @@ from omegaconf import OmegaConf
 from datasets import concatenate_datasets
 
 from datasets_turntaking.switchboard import load_switchboard
+from datasets_turntaking.callhome import load_callhome
 from datasets_turntaking.utils import (
     load_waveform,
     find_island_idx_len,
@@ -54,7 +55,7 @@ def get_dialog_audio_datasets(datasets, split):
                 load_switchboard(split, audio_root=swb_audio_root, ext=swb_ext)
             )
         elif d == "callhome":
-            raise NotImplementedError("Callhome is not yet implemented")
+            dsets.append(load_callhome(split))
         else:
             raise NotImplementedError(f"{d} is not yet implemented")
     dsets = concatenate_datasets(dsets)
@@ -890,10 +891,10 @@ class DEBUG:
 
         feater = OpenSmile("emobase", sample_rate=16000, normalize=True)
 
-        dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
+        dset_hf = get_dialog_audio_datasets(datasets=["callhome"], split="val")
         dset = DialogSlidingWindow(
             dataset=dset_hf,
-            feature_extractor=feater,
+            # feature_extractor=feater,
             audio_duration=10,
             audio_overlap=2,
             sample_rate=16000,
