@@ -3,7 +3,7 @@ import torch.nn as nn
 import torchaudio.transforms as AT
 import einops
 
-from datasets_turntaking.utils import time2frames
+from datasets_turntaking.utils import time_to_samples
 from datasets_turntaking.features.functional import rms_torch, zero_crossing_rate, lpc
 
 
@@ -58,8 +58,8 @@ class ProsodyTorch(nn.Module):
         self.sample_rate = sample_rate
         self.frame_time = frame_time
         self.hop_time = hop_time
-        self.frame_length = time2frames(frame_time, sample_rate)
-        self.hop_length = time2frames(hop_time, sample_rate)
+        self.frame_length = time_to_samples(frame_time, sample_rate)
+        self.hop_length = time_to_samples(hop_time, sample_rate)
         self.center = center
         self.mode = mode
 

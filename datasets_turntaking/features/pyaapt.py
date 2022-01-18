@@ -80,7 +80,7 @@ def compute_shc(
     shc = torch.stack(shc, dim=-1)
 
     # Normalize
-    shc /= shc.max(dim=-2, keepdim=True).values
+    shc /= shc.max(dim=-1, keepdim=True).values
     return shc
 
 
@@ -90,6 +90,7 @@ def compute_nccf(
     frame_length: int,
     hop_length: int,
     freq_low: int,
+    flip: bool = False,
 ) -> torch.Tensor:
     r"""
     Compute Normalized Cross-Correlation Function (NCCF).
@@ -106,10 +107,11 @@ def compute_nccf(
     # EPSILON = 10 ** (-9)
     EPSILON = 1e-9
 
-    # Number of lags to check
-    lags = int(math.ceil(sample_rate / freq_low))
     waveform_length = waveform.size()[-1]
     num_of_frames = int(math.ceil(waveform_length / hop_length))
+
+    # Number of lags to check
+    lags = int(math.ceil(sample_rate / freq_low))
 
     p = lags + num_of_frames * frame_length - waveform_length
     waveform = F.pad(waveform, (0, p))
@@ -124,27 +126,18 @@ def compute_nccf(
             ..., :num_of_frames, :
         ]
 
-        # # Done in torchaudio.functional.functional._compute_nccf
-        # e0 = (EPSILON + torch.norm(s_n, p=2, dim=-1)).pow(2)
-        # ek = (EPSILON + torch.norm(s_nk, p=2, dim=-1)).pow(2)
-        # output_frames = (s_n * s_nk).sum(-1) / e0 / ek
-
         e0 = s_n.pow(2).sum(dim=-1)
         ek = s_nk.pow(2).sum(dim=-1)
-        den = EPSILON + torch.sqrt(e0 * ek)
-        output_frames = (s_n * s_nk).sum(-1) / den
+        scale = 1.0 / (EPSILON + torch.sqrt(e0 * ek))
+        output_frames = scale * (s_n * s_nk).sum(-1)
 
-        # den = e0*ek
-        # output_frames = (s1*s2).sum(-1) / den
-        # output_frames = (
-        #     (s1 * s2).sum(-1)
-        #     / (EPSILON + torch.norm(s1, p=2, dim=-1)).pow(2)
-        #     / (EPSILON + torch.norm(s2, p=2, dim=-1)).pow(2)
-        # )
-
-        # output_lag.append(output_frames.unsqueeze(-1))
         output_lag.append(output_frames)
     nccf = torch.stack(output_lag, dim=-1)
+
+    if flip:
+        print("nccf: ", tuple(nccf.shape))
+        nccf = torch.flip(nccf, dims=(nccf.ndim - 1,))
+        print("nccf: ", tuple(nccf.shape))
     return nccf
 
 
@@ -204,6 +197,7 @@ def pyaapt(
         frame_length=spec_kwargs["frame_length"],
         hop_length=spec_kwargs["hop_length"],
         freq_low=f0_min,
+        flip=True,
     )
     nccf, nccf_nonlinear = nccf_signal[:, 0], nccf_signal[:, 1]
 
@@ -217,215 +211,161 @@ def pyaapt(
     }
 
 
-def nlfer_orig(signal, frame_size, frame_jump, nfft, parameters):
-    import numpy.lib.stride_tricks as stride_tricks
-    from scipy.signal.windows import hann
+def figure_3(
+    spectrum,
+    shc,
+    shc_lines=None,
+    shc_thresh=0.2,
+    same_length=False,
+    plot=False,
+    figsize=(16, 9),
+):
+    fig, ax = plt.subplots(2, 1, figsize=figsize)
 
-    def stride_matrix(vector, n_lin, n_col, hop):
-        data_matrix = stride_tricks.as_strided(
-            vector,
-            shape=(n_lin, n_col),
-            strides=(vector.strides[0] * hop, vector.strides[0]),
-        )
-        return data_matrix
+    # Spectrum
+    ax[0].plot(spectrum)
+    ax[0].set_title("Spectrum")
+    ax[0].set_ylabel("Amplitude")
+    ax[0].set_xlabel("Frequency(Hz)")
 
-    # ---------------------------------------------------------------
-    # Set parameters.
-    # ---------------------------------------------------------------
-    N_f0_min = np.around((parameters["f0_min"] * 2 / float(signal.new_fs)) * nfft)
-    N_f0_max = np.around((parameters["f0_max"] / float(signal.new_fs)) * nfft)
-    window = hann(frame_size + 2)[1:-1]
-    data = np.zeros((signal.size))  # Needs other array, otherwise stride and
-    data[:] = signal.filtered  # windowing will modify signal.filtered
+    # Spectral harmonics correlation
+    ax[1].plot(shc)
 
-    # ---------------------------------------------------------------
-    # Main routine.
-    # ---------------------------------------------------------------
-    samples = np.arange(
-        int(np.fix(float(frame_size) / 2)),
-        signal.size - int(np.fix(float(frame_size) / 2)),
-        frame_jump,
-    )
+    if shc_lines is not None:
+        ax[1].vlines(x=shc_lines, ymin=0, ymax=1, color="k", linewidth=0.5)
+    else:
+        candidate_idx = torch.where(shc >= shc_thresh)[0]
+        if len(candidate_idx) > 0:
+            ax[1].vlines(x=candidate_idx, ymin=0, ymax=1, color="k", linewidth=0.5)
+    ax[1].set_title("Spectral harmonics correlation function")
+    ax[1].set_ylabel("Amplitude")
+    ax[1].set_xlabel("Frequency(Hz)")
+    if same_length:
+        ax[1].set_xlim(ax[0].get_xlim())
 
-    data_matrix = np.empty((len(samples), frame_size))
-    data_matrix[:, :] = stride_matrix(data, len(samples), frame_size, frame_jump)
-    data_matrix *= window
+    plt.tight_layout()
 
-    specData = np.fft.rfft(data_matrix, nfft)
-    frame_energy = np.abs(specData[:, int(N_f0_min - 1) : int(N_f0_max)]).sum(axis=1)
-    # pitch.set_energy(frame_energy, parameters['nlfer_thresh1'])
-    # pitch.set_frames_pos(samples)
-    return frame_energy, samples
+    if plot:
+        plt.pause(0.1)
+
+    return fig, ax
 
 
-def compare():
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import amfm_decompy.basic_tools as basic
-    from amfm_decompy.pYAAPT import BandpassFilter  # , yaapt
-    from datasets_turntaking.utils import load_waveform
-    import librosa
-    from librosa import display
+def plot_intermediate(f0, vuv_threshold, mask=False, plot=True):
+    print("NLFER: ", tuple(f0["nlfer"].shape))
+    print("SHC: ", tuple(f0["shc"].shape))
+    print("NCCF: ", tuple(f0["nccf"].shape))
+    print("vuv: ", tuple(f0["vuv"].shape))
 
-    sample_rate = 20000
-    waveform, sr = load_waveform(
-        "assets/hello.wav", sample_rate=sample_rate, normalize=True, mono=True
-    )
-
-    # WIP
-    sample_rate = 20000
-    f0_min = 60
-    f0_max = 400
-    filter_kwargs = {"order": 150, "min_hz": 50, "max_hz": 1500, "dec_factor": 1}
-    spec_kwargs = {"frame_length": 700, "hop_length": 200, "n_fft": 8192}
-    shc_kwargs = {"NH": 3, "WL": 40}
-    f0 = pyaapt(
-        waveform,
-        sample_rate,
-        f0_min,
-        f0_max,
-        filter_kwargs=filter_kwargs,
-        spec_kwargs=spec_kwargs,
-        shc_kwargs=shc_kwargs,
-    )
-
-    # ---------------------------------------------------------------
-    # Create the signal objects and filter them.
-    # ---------------------------------------------------------------
-
-    # bandpass
-    parameters = {"dec_factor": 1, "bp_forder": 150, "bp_low": 50, "bp_high": 1500}
-    # nfler
-    nlfer_params = {
-        "frame_length": 35,
-        "frame_space": 10,
-        "fft_length": 8192,
-        "f0_min": 60,
-        "f0_max": 400,
-        "NLFER_Thresh1": 0.75,
+    imshow_kwargs = {
+        "aspect": "auto",
+        "origin": "lower",
+        "interpolation": "none",
     }
-    parameters.update(nlfer_params)
-    nfft = parameters["fft_length"]
-    frame_size = int(np.fix(parameters["frame_length"] * sample_rate / 1000))
-    frame_jump = int(np.fix(parameters["frame_space"] * sample_rate / 1000))
 
-    signal = basic.SignalObj(
-        data=waveform[0].numpy(),
-        fs=sample_rate,
+    fig, ax = plt.subplots(3, 1)
+    ax[0].set_title("Normalized low frequency energy ratio")
+    ax[0].plot(f0["nlfer"][0], label="NLFER")
+    ax[0].hlines(
+        y=vuv_threshold, xmin=0, xmax=f0["vuv"].shape[-1], linestyle="dashed", color="k"
     )
-    nonlinear_sign = basic.SignalObj(signal.data ** 2, signal.fs)
-    fir_filter = BandpassFilter(signal.fs, parameters)
-    signal.filtered_version(fir_filter)
-    nonlinear_sign.filtered_version(fir_filter)
+    ax[0].plot(f0["vuv"][0], label="vuv")
+    ax[0].legend(loc="upper left")
+    ax[0].set_xlim([0, f0["nlfer"].shape[-1]])
+    ax[0].set_xticks([])
 
-    filtered, _ = bandpass(waveform, sample_rate)
-    nonlinear_filtered, _ = bandpass(waveform.pow(2), sample_rate)
+    shc = f0["shc"][0].t()
+    nccf = f0["nccf"][0].t()
+    if mask:
+        shc[:, torch.logical_not(f0["vuv"][0])] = 0.0
+        nccf[:, torch.logical_not(f0["vuv"][0])] = -1.0
 
-    # s = librosa.stft(signal[0, 0].numpy(), center=False)
-    # S = librosa.stft(signal[0, 1].numpy(), center=False)
-    # fig, ax = plt.subplots(2, 1, sharex=True)
-    # img = display.specshow(
-    #     librosa.amplitude_to_db(s, ref=np.max), y_axis="log", x_axis="time", ax=ax[0]
-    # )
-    # img = display.specshow(
-    #     librosa.amplitude_to_db(S, ref=np.max), y_axis="log", x_axis="time", ax=ax[1]
-    # )
-    # ax[0].set_title("Power spectrogram")
-    # fig.colorbar(img, ax=ax, format="%+2.0f dB")
-    # plt.pause(0.1)
+    ax[1].set_title("Spectral harmonics correlation")
+    ax[1].imshow(shc, extent=(0, shc.shape[1], 0, shc.shape[0]), **imshow_kwargs)
+    ax[1].set_xticks([])
 
-    ################################################################3
-    non_equal = (
-        (filtered.squeeze() - torch.from_numpy(signal.filtered).float()).abs() > 1e-5
-    ).sum()
-    print("bandpass error: ", non_equal)
-    non_equal = (
-        (
-            nonlinear_filtered.squeeze()
-            - torch.from_numpy(nonlinear_sign.filtered).float()
-        ).abs()
-        > 1e-5
-    ).sum()
-    print("bandpass nonlinear error: ", non_equal)
-    ################################################################3
+    ax[2].set_title("Normalized cross correlation function")
+    ax[2].imshow(nccf, extent=(0, nccf.shape[1], 0, nccf.shape[0]), **imshow_kwargs)
 
-    threshold = 0.75
-    pitch_frame_energy, samples = nlfer_orig(
-        signal,
-        frame_size=frame_size,
-        frame_jump=frame_jump,
-        nfft=nfft,
-        parameters=parameters,
-    )
-    print("pitch_frame_energy: ", tuple(pitch_frame_energy.shape))
-    print("samples: ", tuple(samples.shape))
-    pitch_frame_energy = np.concatenate((np.zeros(2), pitch_frame_energy))
-    pitch_mean = pitch_frame_energy.mean()
-    pitch_frame_energy = pitch_frame_energy / pitch_mean
-    pitch_vuv = pitch_frame_energy > threshold
+    plt.tight_layout()
+    if plot:
+        plt.pause(0.1)
+    return fig, ax
 
-    # NLFER
-    x_nlfer = nlfer(filtered, sample_rate, frame_size, hop_length=frame_jump)
-    vuv = x_nlfer > threshold
-    # vuv = (x_nlfer > 0.5).float()
 
-    fig, ax = plt.subplots(1, 1)
-    ax.plot(x_nlfer[0], label="new", alpha=0.6)
-    ax.plot(vuv[0], label="vuv", alpha=0.6)
-    ax.plot(pitch_frame_energy, label="orig", alpha=0.6)
-    ax.plot(pitch_vuv, label="orig vuv", linestyle="dashed", alpha=0.6)
-    ax.legend()
-    plt.pause(0.1)
+def plot_shc_selection(shc, vuv, shc_thresh=0.2, plot=True):
+    # vuv: nlfier >= NLFER_thresh1
+    n_frames, n_bins = shc.shape[0], shc.shape[1]
 
-    ################################################################3
-    # SHC
-    shc_ = shc(
-        filtered,
-        sample_rate,
-        n_fft=8192,
-        hop_length=frame_jump,
-        frame_size=frame_size,
-        f0_min=60,
-        f0_max=400,
-        NH=3,
-        WL=40,
-    )
-    print("shc: ", tuple(shc_.shape))
+    fig, ax = plt.subplots(3, 1)
+    imshow_kwargs = {
+        "aspect": "auto",
+        "origin": "lower",
+        "interpolation": "none",
+    }
 
-    fig, ax = plt.subplots(2, 1)
-    f0_max_bin = shc_.argmax(dim=1)[0]
-    f0_max_bin[torch.logical_not(vuv[0])] = -15
-    ax[0].plot(f0_max_bin, label="shc")
-    ax[0].legend()
-    ax[1].plot(vuv[0])
-    plt.pause(0.1)
+    # mask unvoiced below NLFER_thresh1
+    shc[torch.logical_not(vuv)] = 0.0
+    ax[0].set_title("Spectral harmonics correlation")
+    ax[0].imshow(shc.t(), extent=(0, n_frames, 0, n_bins), **imshow_kwargs)
+    ax[0].set_xticks([])
+
+    # mask everything below peak thresh SHC_thresh
+    shc[shc < shc_thresh] = 0.0
+    ax[1].set_title("Peak thresh")
+    ax[1].imshow(shc.t(), extent=(0, n_frames, 0, n_bins), **imshow_kwargs)
+    # ax[1].set_xticks([])
+
+    if plot:
+        plt.pause(0.1)
+    return fig, ax
+
+
+def find_peaks(data, threshold, box_size=3):
+    def maximum_filter(x, kernel_size):
+        pad = (kernel_size - 1) // 2
+        x = F.max_pool2d(x, kernel_size, stride=1, padding=pad)
+        return x
+
+    data_max = maximum_filter(data, box_size)
+    peak_goodmask = data == data_max
+    peak_goodmask = torch.logical_and(peak_goodmask, (data > threshold))
+    locations = peak_goodmask.nonzero(as_tuple=True)
+    peak_values = data[locations]
+    return locations, peak_values
 
 
 if __name__ == "__main__":
     import numpy as np
     import matplotlib.pyplot as plt
     from datasets_turntaking.utils import load_waveform
-    from torchaudio.functional.functional import _compute_nccf
+    import librosa
+    from librosa import display
     import time
+    import sounddevice as sd
 
-    sample_rate = 16000
+    sample_rate = 20000
     waveform, sr = load_waveform(
         "assets/hello.wav", sample_rate=sample_rate, normalize=True, mono=True
     )
+    waveform = torch.stack((waveform[0, 10000:], waveform[0, :-10000]))
     # waveform = torch.cat([waveform] * 50).to('cuda')
     # waveform = torch.cat([waveform] * 50)
     print("waveform: ", tuple(waveform.shape))
+
+    sd.play(waveform[0], samplerate=sample_rate)
 
     # waveform = waveform.to("cuda")
 
     # WIP
     f0_min = 60
     f0_max = 400
+    f0_mid = 150  # Hz
     # frame_time = 0.035  # original
     # hop_time = 0.01
     frame_time = 0.035  # original
     hop_time = 0.01
-    vuv_threshold = 0.75
+    vuv_threshold = 0.5
     filter_kwargs = {"order": 150, "min_hz": 50, "max_hz": 1500, "dec_factor": 1}
     spec_kwargs = {"frame_length": 700, "hop_length": 200, "n_fft": 8192}
     shc_kwargs = {"NH": 3, "WL": 40}
@@ -446,14 +386,82 @@ if __name__ == "__main__":
     print("NCCF: ", tuple(f0["nccf"].shape))
     print("NCCF_nonlinear: ", tuple(f0["nccf_nonlinear"].shape))
     print("vuv: ", tuple(f0["vuv"].shape))
+    fig, ax = plot_intermediate(f0, vuv_threshold=vuv_threshold, mask=True)
+
+    # SHC selection
+    N_min = round(spec_kwargs["n_fft"] * f0_min / sample_rate)
+    N_mid = round(spec_kwargs["n_fft"] * f0_mid / sample_rate)
+    N_max = round(spec_kwargs["n_fft"] * f0_max / sample_rate)
+    f0_cand_n_bins = N_max - N_min
+    N_mid_rel = N_mid - N_min
+    print("N_min: ", N_min)
+    print("N_mid: ", N_mid)
+    print("N_max: ", N_max)
+    print("N_mid_rel: ", N_mid_rel)
+    print("f0_cand_n_bins: ", f0_cand_n_bins)
+
+    # find peaks
+    # add doubling/halfing f0 candidates
+    # if all peaks > f0_mid then add a candidate of half the frequency of the highest peak
+    # if all peaks < f0_mid then add a candidate of double the frequency of the highest peak
+    # shc -> vuv-filter -> shc-filter (shc_thresh) -> peak finder -> add additional candidates
+    shc = f0["shc"].clone()
+    nccf = f0["nccf"].clone()
+    vuv = f0["vuv"]
+    shc_thresh = 0.2
+    n_frames, shc_bins = shc.shape[1], shc.shape[2]
+    nccf_bins = nccf.shape[2]
+    print("shc: ", tuple(shc.shape))
+    print("vuv: ", tuple(vuv.shape))
+    # mask nlfer/vuv
+    shc[torch.logical_not(vuv)] = 0.0
+    nccf[torch.logical_not(vuv)] = -1
+    imshow_kwargs = {
+        "aspect": "auto",
+        "origin": "lower",
+        "interpolation": "none",
+    }
+
+    # TODO: the peak finder does not work well for NCCF. misses clear peaks when box-size=3 (=1 does not do anything)
+    # extract only the peak values
+    loc, vals = find_peaks(shc, threshold=0.2)
+    shc_peaks = torch.zeros_like(shc)
+    shc_peaks[loc] = vals
+    # extract only the peak values
+    loc, vals = find_peaks(nccf + 1, threshold=1.4, box_size=3)
+    nccf_peaks = torch.zeros_like(nccf)
+    nccf_peaks[loc] = vals
+    fig, ax = plt.subplots(2, 1)
+    # mask everything below peak thresh SHC_thresh
+    ax[0].set_title("SHC peaks")
+    ax[0].imshow(shc_peaks[0].t(), extent=(0, n_frames, 0, shc_bins), **imshow_kwargs)
+    # ax[1].set_xticks([])
+    ax[1].set_title("NCCF peaks")
+    ax[1].imshow(nccf_peaks[0].t(), extent=(0, n_frames, 0, nccf_bins), **imshow_kwargs)
+    plt.pause(0.1)
+
+    # this creates variable length windows on batched sequences
+    # -> pad
+    # Concatenate all voiced frames (omit unvoiced)
+    peaks_concat = []
+    for b in loc[0].unique():
+        bidx = b == loc[0]
+        frames = loc[1][bidx]
+        tmp_batch = []
+        for frame in frames.unique():
+            fidx = frame == frames
+            vidx = loc[2][bidx][fidx]
+            tmp_values = vals[vidx]
+
+    cpeaks = torch.zeros()
+    # insert half/double candidates
+    # median candidate for 7 point smoothed of highest merit in each frame
 
     fig, ax = plt.subplots(2, 1)
-    ax[0].plot(f0["nlfer"][0], label="nlfer", alpha=0.6)
-    ax[0].plot(f0["vuv"][0], label="vuv", alpha=0.6)
-    ax[0].legend()
-    f0_max_bin = f0["shc"].argmax(dim=-1)[0]
-    f0_max_bin[torch.logical_not(f0["vuv"][0])] = -15
-    ax[1].plot(f0_max_bin, label="shc")
-    ax[1].legend()
+    # mask everything below peak thresh SHC_thresh
+    ax[0].set_title("Peak thresh")
+    ax[0].imshow(shc[0].t(), extent=(0, n_frames, 0, n_bins), **imshow_kwargs)
+    # ax[1].set_xticks([])
+    ax[1].set_title("Peaks")
+    ax[1].imshow(peaks[0].t(), extent=(0, n_frames, 0, n_bins), **imshow_kwargs)
     plt.pause(0.1)
-    input()

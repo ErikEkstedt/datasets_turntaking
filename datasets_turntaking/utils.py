@@ -8,19 +8,31 @@ import torchaudio.functional as AF
 from torchaudio.backend.sox_io_backend import info as info_sox
 
 
-def time2frames(t, sample_rate):
+def samples_to_frames(s, hop_len):
+    return int(s / hop_len)
+
+
+def sample_to_time(n_samples, sample_rate):
+    return n_samples / sample_rate
+
+
+def frames_to_time(f, hop_time):
+    return f * hop_time
+
+
+def time_to_frames(t, hop_time):
+    return int(t / hop_time)
+
+
+def time_to_samples(t, sample_rate):
     return int(t * sample_rate)
-
-
-def time2sample(t, sr):
-    return int(t * sr)
 
 
 def get_audio_info(audio_path):
     info = info_sox(audio_path)
     return {
         "name": basename(audio_path),
-        "duration": info.num_frames / info.sample_rate,
+        "duration": sample_to_time(info.num_frames, info.sample_rate),
         "sample_rate": info.sample_rate,
         "num_frames": info.num_frames,
         "bits_per_sample": info.bits_per_sample,
@@ -33,10 +45,10 @@ def load_waveform(
 ):
     if start_time:
         info = get_audio_info(path)
-        frame_offset = time2sample(start_time, info["sample_rate"])
+        frame_offset = time_to_samples(start_time, info["sample_rate"])
         num_frames = info["num_frames"]
         if end_time:
-            num_frames = time2sample(end_time, info["sample_rate"]) - frame_offset
+            num_frames = time_to_samples(end_time, info["sample_rate"]) - frame_offset
         else:
             num_frames = num_frames - frame_offset
         x, sr = torchaudio.load(path, frame_offset=frame_offset, num_frames=num_frames)

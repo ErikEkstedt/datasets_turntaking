@@ -2,18 +2,19 @@ import torch
 import torch.nn.functional as F
 
 
-def zero_crossing_rate(y, frame_length, hop_length, center=True):
-    def crossings(y):
-        s = torch.signbit(y)
-        s = s[..., :-1] != s[..., 1:]
-        z = torch.zeros_like(s[..., :1])
-        return torch.cat((z, s), dim=-1)
+def zero_crossings(y):
+    s = torch.signbit(y)
+    s = s[..., :-1] != s[..., 1:]
+    z = torch.zeros_like(s[..., :1])
+    return torch.cat((z, s), dim=-1)
 
+
+def zero_crossing_rate(y, frame_length, hop_length, center=True):
     if center:
         pad = int(frame_length // 2)
         y = F.pad(y, (pad, pad))
     s_frames = y.unfold(dimension=-1, size=frame_length, step=hop_length)
-    cross = crossings(s_frames)
+    cross = zero_crossings(s_frames)
     return cross.float().mean(dim=-1)
 
 

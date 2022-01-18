@@ -69,3 +69,23 @@ def pYAAPT(
         f0.append(f_)
         vuv.append(vuv_)
     return torch.stack(f0), torch.stack(vuv)
+
+
+if __name__ == "__main__":
+    from datasets_turntaking.utils import load_waveform
+    import matplotlib.pyplot as plt
+
+    sample_rate = 20000
+    waveform, sr = load_waveform(
+        "assets/hello.wav", sample_rate=sample_rate, normalize=True, mono=True
+    )
+    # waveform = torch.cat([waveform] * 50).to('cuda')
+    # waveform = torch.cat([waveform] * 50)
+    print("waveform: ", tuple(waveform.shape))
+
+    amfm_f0, amfm_vuv = pYAAPT(waveform, sample_rate, frame_length=700, hop_length=200)
+    ofig, oax = plt.subplots(1, 1)
+    oax.plot(amfm_f0[0], label="amfm: f0", linewidth=2)
+    ymax = oax.get_ylim()[-1] - 5
+    oax.plot(amfm_vuv[0] * ymax, label="amfm: vuv", alpha=0.6)
+    plt.pause(0.1)

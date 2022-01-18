@@ -24,6 +24,10 @@ from datasets_turntaking.utils import (
     repo_root,
     OmegaConfArgs,
     load_config,
+    samples_to_frames,
+    frames_to_time,
+    time_to_frames,
+    time_to_samples,
 )
 from datasets_turntaking.features.vad import VadProjection, VAD
 
@@ -31,16 +35,12 @@ from datasets_turntaking.features.vad import VadProjection, VAD
 DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
 
 # TODO: transforms -> noise
-# TODO: Config
-# TODO: VAD-history
 
 
 # Hardcoded for now
 # Change these to your swithcboard/CALLHOME audio roots
 # Not publicly available to download :(
 DATASETS = ["switchboard"]
-swb_audio_root = join(expanduser("~"), "projects/data/switchboard/audio")
-swb_ext = ".wav"
 
 
 def get_dialog_audio_datasets(datasets, split):
@@ -51,32 +51,13 @@ def get_dialog_audio_datasets(datasets, split):
     dsets = []
     for d in datasets:
         if d == "switchboard":
-            dsets.append(
-                load_switchboard(split, audio_root=swb_audio_root, ext=swb_ext)
-            )
+            dsets.append(load_switchboard(split))
         elif d == "callhome":
             dsets.append(load_callhome(split))
         else:
             raise NotImplementedError(f"{d} is not yet implemented")
     dsets = concatenate_datasets(dsets)
     return dsets
-
-
-# For VAD frames
-def samples_to_frames(s, hop_len):
-    return int(s / hop_len)
-
-
-def frames_to_time(f, hop_time):
-    return f * hop_time
-
-
-def time_to_frames(t, hop_time):
-    return int(t / hop_time)
-
-
-def time_to_samples(t, sample_rate):
-    return int(t * sample_rate)
 
 
 def get_channel_ipus(
@@ -459,10 +440,10 @@ class DialogIPU(DialogIterable):
         # We "center" the end of the IPUs at `self.audio_context_duration`
         self.audio_context_duration = audio_context_duration
         self.audio_context_frames = time_to_frames(
-            audio_context_duration, self.vad_hop_time
+            audio_context_duration, hop_time=self.vad_hop_time
         )
         self.audio_duration_frames = time_to_frames(
-            self.audio_duration, self.vad_hop_time
+            self.audio_duration, hop_time=self.vad_hop_time
         )
 
         # IPU params

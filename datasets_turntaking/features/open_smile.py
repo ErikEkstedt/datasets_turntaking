@@ -179,19 +179,22 @@ if __name__ == "__main__":
     batch = next(diter)
 
     batch["waveform"].shape
-    waveform = batch["waveform"][0]
+    waveform = batch["waveform"]
     sample_rate = 16000
 
     ###################################################################
 
     smile = OpenSmile("emobase")
 
+    x = torch.cat((waveform, waveform)).permute(1, 0)
+    a = smile.smile.process_signal(x, sample_rate).to_numpy()
+
     # 12 - 62 for 10,000 samples (less individual dialogs)
     f0_min = 999
     f0_max = -f0_min
     N = 10000
     for i, batch in enumerate(tqdm(dm.train_dataloader(), total=N)):
-        f = smile(batch["waveform"], sample_rate, norm=False)
+        f = smile(batch["waveform"])
         f0s = f[..., 10].round()
         fmin = f0s[f0s != 0].min().item()
         fmax = f0s.max().item()
