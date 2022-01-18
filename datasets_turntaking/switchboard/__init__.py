@@ -1,12 +1,14 @@
-from os.path import join
+from os.path import join, expanduser
 from datasets import load_dataset
 from datasets_turntaking.utils import repo_root
 
 
 DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
+AUDIO_DIR = join(expanduser("~"), "projects/data/switchboard/audio")
+EXT = ".wav"
 
 
-def load_switchboard(split="train", audio_root=None, ext=".wav"):
+def load_switchboard(split="train", audio_root=AUDIO_DIR, ext=EXT):
     if split == "val":
         split = "validation"
 
