@@ -41,13 +41,19 @@ def get_audio_info(audio_path):
 
 
 def load_waveform(
-    path, sample_rate=None, start_time=None, end_time=None, normalize=False, mono=False
+    path,
+    sample_rate=None,
+    start_time=None,
+    end_time=None,
+    normalize=False,
+    mono=False,
+    audio_normalize_threshold=0.05,
 ):
-    if start_time:
+    if start_time is not None:
         info = get_audio_info(path)
         frame_offset = time_to_samples(start_time, info["sample_rate"])
         num_frames = info["num_frames"]
-        if end_time:
+        if end_time is not None:
             num_frames = time_to_samples(end_time, info["sample_rate"]) - frame_offset
         else:
             num_frames = num_frames - frame_offset
@@ -57,13 +63,19 @@ def load_waveform(
 
     if normalize:
         if x.shape[0] > 1:
-            x[0] /= x[0].abs().max()
-            x[1] /= x[1].abs().max()
+            if x[0].abs().max() > audio_normalize_threshold:
+                x[0] /= x[0].abs().max()
+            if x[1].abs().max() > audio_normalize_threshold:
+                x[1] /= x[1].abs().max()
         else:
-            x[0] /= x[0].abs().max()
+            if x.abs().max() > audio_normalize_threshold:
+                x /= x.abs().max()
 
     if mono and x.shape[0] > 1:
         x = x.mean(dim=0).unsqueeze(0)
+        if normalize:
+            if x.abs().max() > audio_normalize_threshold:
+                x /= x.abs().max()
 
     if sample_rate:
         if sr != sample_rate:

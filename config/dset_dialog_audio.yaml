@@ -1,20 +1,19 @@
 dataset:
   datasets: ["switchboard"]
-  type: "ipu"  # sliding
+  type: "sliding"
   sample_rate: 16000
   audio_mono: true
   audio_duration: 10
   audio_normalize: true
   # Sliding Dataset
   audio_overlap: 2
-  audio_include_ratio: 0.4
   # IPU Dataset
   audio_context_duration: 8
   ipu_min_time: 1
   ipu_pause_time: 0.2
   # VAD
-  vad_hop_time: 0.01
-  vad_bin_sizes: [20, 40, 60, 80]
+  vad_hz: 100
+  vad_bin_times: [.2, .4, .6, .8]
   vad_threshold_ratio: 0.5
   vad_history: true
   vad_history_times: [60, 30, 10, 5]

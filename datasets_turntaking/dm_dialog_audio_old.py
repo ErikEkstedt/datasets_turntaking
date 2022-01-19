@@ -28,6 +28,7 @@ from datasets_turntaking.utils import (
     frames_to_time,
     time_to_frames,
     time_to_samples,
+    get_audio_info,
 )
 from datasets_turntaking.features.vad import VadProjection, VAD
 
@@ -123,6 +124,263 @@ def print_dm(data_conf, args):
 
 
 class DialogIterable(IterableDataset):
+    def __init__(
+        self,
+        dataset,
+        feature_extractor=None,
+        audio_mono=True,
+        audio_duration=10,
+        audio_normalize=True,
+        sample_rate=16000,
+        vad_hop_time=0.01,
+        vad_bin_sizes=[20, 40, 60, 80],
+        vad_threshold_ratio=0.5,
+        vad_history=False,
+        vad_history_times=[60, 30, 10, 5],
+        flip_channels=True,
+        flip_probability=0.5,
+        shuffle=False,
+    ):
+        super().__init__()
+        self.dataset = dataset  # included datasets
+        self.feature_extractor = feature_extractor
+
+        # Audio (waveforms)
+        self.audio_mono = audio_mono
+        self.audio_duration = audio_duration
+        # normalize waveform chunks w/w.abs().max()
+        self.audio_normalize = audio_normalize
+        # should not normalize audio with less intensity
+        self.audio_normalize_threshold = 0.05
+
+        self.flip_channels = flip_channels
+        self.flip_probability = flip_probability
+
+        self.sample_rate = sample_rate
+        self.shuffle = shuffle
+
+        # Defines the audio chunk size
+        self.samples_per_chunk = int(self.audio_duration * self.sample_rate)
+
+        # VAD parameters
+        self.vad_hop_time = vad_hop_time  # 0.01s=100Hz
+        self.vad_bin_sizes = vad_bin_sizes
+        self.vad_threshold_ratio = vad_threshold_ratio
+        # samples per frame in the vad-frame representation
+        self.vad_hop_samples = int(self.vad_hop_time * self.sample_rate)
+        self.vad_frames_per_chunk = samples_to_frames(
+            self.samples_per_chunk, hop_len=self.vad_hop_samples
+        )
+
+        # Vad prediction labels
+        self.vad_frame_pred = sum(self.vad_bin_sizes)
+        self.vad_codebook = VadProjection(
+            n_bins=2 * len(self.vad_bin_sizes),
+            bin_sizes=self.vad_bin_sizes,
+            threshold_ratio=self.vad_threshold_ratio,
+        )
+
+        # Vad history
+        self.vad_history = vad_history
+        self.vad_history_times = vad_history_times
+        self.vad_history_frames = (
+            (torch.tensor(vad_history_times) / vad_hop_time).long().tolist()
+        )
+
+    def get_indices(self):
+        """
+        SOURCE: https://pytorch.org/docs/stable/data.html#iterable-style-datasets
+        """
+        indices = list(range(len(self.dataset)))
+        worker_info = get_worker_info()
+        if worker_info is not None:
+            end = len(indices)
+            per_worker = math.ceil((end / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = worker_id * per_worker
+            iter_end = min(iter_start + per_worker, end)
+            indices = indices[iter_start:iter_end]
+        return indices
+
+    def _normalize_audio(self, wav):
+        if wav.shape[0] > 1:
+            if wav[0].abs().max() > self.audio_normalize_threshold:
+                wav[0] /= wav[0].abs().max()
+            if wav[1].abs().max() > self.audio_normalize_threshold:
+                wav[1] /= wav[1].abs().max()
+        else:
+            if wav.abs().max() > self.audio_normalize_threshold:
+                wav /= wav.abs().max()
+        return wav
+
+    def load_defaults(self, b, start_time, end_time):
+        # Loads the dialog waveform (stereo) and normalize/to-mono for each
+        # smaller segment in loop below
+        x, _ = load_waveform(
+            b["audio_path"],
+            sample_rate=self.sample_rate,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        # VAD-frame of relevant part
+        start_frame = time_to_frames(start_time, self.vad_hop_samples)
+        end_frame = time_to_frames(end_time, self.vad_hop_samples)
+
+        # TODO: extract relevant vad directly
+        # Extract Vad-frames based on a list of speaker activity
+        # channel_vad: [(start, end), (start,end), ...]
+        # [ch0_vad, ch1_vad]
+        # for both speakers
+        # duration of entire dialog
+        duration = get_audio_info(b["audio_path"])["duration"]
+        all_vad_frames = VAD.vad_list_to_onehot(
+            b["vad"],
+            sample_rate=self.sample_rate,
+            hop_length=self.vad_hop_samples,
+            duration=duration,
+            channel_last=True,
+        )
+        vad_history = None
+        if self.vad_history:
+            # history up until the current features arrive
+            vad_history, _ = VAD.get_activity_history(
+                all_vad_frames,
+                bin_end_frames=self.vad_history_frames,
+                channel_last=True,
+            )
+            vad_history = vad_history[start_frame, end_frame]
+
+        # only care about relevant part
+        vad_frames = all_vad_frames[start_frame, end_frame]
+        return x, vad_frames, vad_history, duration
+
+    def finalize_sample(
+        self, wav, vad_frames, vad_history, focus_speaker, b, f_start, f_end
+    ):
+        # Normalize over the particular segment
+        if self.audio_normalize:
+            wav = self._normalize_audio(wav)
+
+        if self.audio_mono:
+            wav = wav.mean(dim=0).unsqueeze(0)
+
+        if self.vad_history:
+            tmp_vad_history = vad_history[f_start:f_end]
+
+        ###############################################################
+        # Include the prediction horizon and pad with zeros
+        # if there is no horizon (end of dialog)
+        # (+1) includes the last frame
+        tmp_vad = vad_frames[f_start : f_end + self.vad_frame_pred + 1, :]
+        if tmp_vad.shape[0] < self.vad_frames_per_chunk + self.vad_frame_pred:
+            diff = (
+                self.vad_frames_per_chunk + 1 + self.vad_frame_pred - tmp_vad.shape[0]
+            )
+            z = torch.zeros((diff, 2))
+            tmp_vad = torch.cat((tmp_vad, z), dim=-2)
+
+        if tmp_vad.shape[0] != self.vad_frames_per_chunk + self.vad_frame_pred + 1:
+            print(
+                "VAD:",
+                tmp_vad.shape[0],
+                self.vad_frames_per_chunk,
+                self.vad_frame_pred,
+            )
+
+        # flip vad and wav prior to label extraction
+        if self.flip_channels and torch.rand(1).item() > self.flip_probability:
+            if not self.audio_mono:
+                wav = torch.stack((wav[1], wav[0]))
+            tmp_vad = torch.stack((tmp_vad[:, 1], tmp_vad[:, 0]), dim=-1)
+            # Vad history is the residual if flipped
+            # i.e.
+            # speaker A spoke 1 (100%) -> speaker B spoke 0 (0%)
+            # speaker A spoke 0.3 (30%) -> speaker B spoke 0.7 (70%)
+            if self.vad_history:
+                tmp_vad_history = 1 - tmp_vad_history
+
+        # Extract vad labels using the extra horizon
+        # and make sure it is the same size as the "input" vad
+        tmp_vad_labels = self.vad_codebook.vad_to_idx(tmp_vad[..., 1:, :])
+
+        # Force size to be of maximum size
+        tmp_vad = tmp_vad[..., : self.vad_frames_per_chunk, :]
+        tmp_vad_labels = tmp_vad_labels[: self.vad_frames_per_chunk]
+
+        ret = {
+            "waveform": wav,
+            "vad": tmp_vad.unsqueeze(0),  # add batch dimension
+            "vad_label": tmp_vad_labels.unsqueeze(0),
+            "speaker": focus_speaker,
+            "dataset_name": b["dataset_name"],
+            "session": b["session"],
+        }
+
+        if self.feature_extractor is not None:
+            features = self.feature_extractor(wav)
+            ret["features"] = features
+
+        if self.vad_history:
+            ret["vad_history"] = tmp_vad_history.unsqueeze(0)
+
+        return ret
+
+
+class DialogSlidingWindow(DialogIterable):
+    def __init__(
+        self,
+        audio_overlap=5,
+        audio_include_ratio=0.4,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        # Time params used for sliding window
+        self.audio_overlap = audio_overlap
+        self.audio_include_ratio = audio_include_ratio
+        self.step_time = self.audio_duration - self.audio_overlap
+
+        # Sample params used for sliding window
+        self.samples_overlap = int(self.audio_overlap * self.sample_rate)
+        self.samples_step = self.samples_per_chunk - self.samples_overlap
+
+        self.map_to_dset_idx, self.map_to_step = self.get_all_indices()
+
+    def get_all_indices(self):
+        def get_n_segments(duration):
+            return int(duration // self.step_time)
+
+        start = 0
+        map_to_dset_idx = []
+        map_to_step = []
+        for i, path in enumerate(self.dataset["audio_path"]):
+            duration = get_audio_info(path)["duration"]
+            n_clips = get_n_segments(duration)
+            end = start + n_clips
+            map_to_dset_idx += [i] * (end - start)
+            map_to_step += list(range(0, n_clips))
+            start += end
+        return map_to_dset_idx, map_to_step
+
+    def step_to_times(self, n_segment):
+        start = int(n_segment * self.step_time)
+        end = start + self.audio_duration
+        return start, end
+
+    def __len__(self):
+        return len(self.map_to_dset_idx)
+
+    def __iter__(self, idx):
+
+        dset_idx = self.map_to_dset_idx[idx]
+        n_segment = self.map_to_step[idx]
+        start_time, end_time = self.step_to_time(n_segment)
+        d = self.dataset[dset_idx]
+
+
+######################################################
+class DialogIterableOLD(IterableDataset):
     def __init__(
         self,
         dataset,
@@ -313,7 +571,7 @@ class DialogIterable(IterableDataset):
         return ret
 
 
-class DialogSlidingWindow(DialogIterable):
+class DialogSlidingWindowOld(DialogIterable):
     def __init__(
         self,
         audio_overlap=5,
@@ -867,12 +1125,74 @@ def quick_load_dataloader(split="val", batch_size=1, num_workers=0, vad_history=
 class DEBUG:
     @staticmethod
     def debug_dset_sliding():
+        # from datasets_turntaking.features.open_smile import OpenSmile
+        # feater = OpenSmile("emobase", sample_rate=16000, normalize=True)
 
-        from datasets_turntaking.features.open_smile import OpenSmile
+        from librosa import time_to_frames
 
-        feater = OpenSmile("emobase", sample_rate=16000, normalize=True)
+        dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
 
-        dset_hf = get_dialog_audio_datasets(datasets=["callhome"], split="val")
+        audio_kwargs = {"duration": 10, "overlap": 2}
+
+        paths = dset_hf["audio_path"]
+        durations = [get_audio_info(p)["duration"] for p in paths]
+
+        duration = 298.786
+
+        time_to_frames(duration)
+
+        print("clip duration: ", audio_kwargs["duration"])
+        print("clip overlap: ", audio_kwargs["overlap"])
+        step_time = audio_kwargs["duration"] - audio_kwargs["overlap"]
+        n_frames = duration // step_time
+        print("n_frames: ", n_frames)
+        end_time = step_time * n_frames
+        print("end_time: ", end_time)
+
+        def get_n_segments(duration, step):
+            step = audio_kwargs["duration"] - audio_kwargs["overlap"]
+            return int(duration // step)
+
+        def get_total_samples(paths, step_time):
+            start = 0
+            map_to_dset_idx = []
+            map_to_step = []
+            for i, path in enumerate(paths):
+                duration = get_audio_info(path)["duration"]
+                n_clips = get_n_segments(duration, step_time)
+                end = start + n_clips
+                map_to_dset_idx += [i] * (end - start)
+                map_to_step += list(range(0, n_clips))
+                start += end
+
+        def step_to_times(step, step_time, duration):
+            start = int(step * step_time)
+            end = start + duration
+            return start, end
+
+        idx = 10
+        dset_idx = map_to_dset_idx[idx]
+        step = map_to_step[idx]
+        start_time, end_time = step_to_times(
+            step, step_time, duration=audio_kwargs["duration"]
+        )
+
+        print(start_time, end_time)
+        start_time, end_time = step_to_times(
+            step + 1, step_time, duration=audio_kwargs["duration"]
+        )
+        print(start_time, end_time)
+
+        for idx in range(45):
+            dset_idx = map_to_dset_idx[idx]
+            step = map_to_step[idx]
+            print(f"{idx} dset_idx: ", dset_idx)
+            print(f"{idx} step: ", step)
+            print("-" * 20)
+
+        total = torch.tensor(map)
+        total[0]
+
         dset = DialogSlidingWindow(
             dataset=dset_hf,
             # feature_extractor=feater,
