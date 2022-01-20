@@ -13,7 +13,7 @@ from datasets import concatenate_datasets
 
 from datasets_turntaking.callhome import load_callhome
 from datasets_turntaking.switchboard import load_switchboard
-from datasets_turntaking.dialog_audio.dataset import DialogSlidingWindow
+from datasets_turntaking.dialog_audio.dataset import DialogAudioDataset
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 
 
@@ -41,7 +41,7 @@ class DialogAudioDM(pl.LightningDataModule):
     def __init__(
         self,
         datasets,
-        type="sliding",
+        type="sliding",  # ipu
         audio_mono=True,
         audio_duration=10,
         audio_normalize=True,
@@ -111,23 +111,21 @@ class DialogAudioDM(pl.LightningDataModule):
             )
 
     def _dataset(self, dset):
-        if self.type == "ipu":
-            raise NotImplementedError("IPUDataset not implemented")
-        else:
-            dset = DialogSlidingWindow(
-                dataset=dset,
-                audio_mono=self.audio_mono,
-                audio_duration=self.audio_duration,
-                audio_overlap=self.audio_overlap,
-                audio_normalize=self.audio_normalize,
-                sample_rate=self.sample_rate,
-                vad_hz=self.vad_hz,
-                vad_bin_times=self.vad_bin_times,
-                vad_threshold_ratio=self.vad_threshold_ratio,
-                vad_history=self.vad_history,
-                vad_history_times=self.vad_history_times,
-            )
-        return dset
+        return DialogAudioDataset(
+            dataset=dset,
+            feature_extractor=None,
+            type=self.type,
+            audio_mono=self.audio_mono,
+            audio_duration=self.audio_duration,
+            audio_overlap=self.audio_overlap,
+            audio_normalize=self.audio_normalize,
+            sample_rate=self.sample_rate,
+            vad_hz=self.vad_hz,
+            vad_bin_times=self.vad_bin_times,
+            vad_threshold_ratio=self.vad_threshold_ratio,
+            vad_history=self.vad_history,
+            vad_history_times=self.vad_history_times,
+        )
 
     def setup(self, stage: Optional[str] = "fit"):
         """Loads the datasets"""

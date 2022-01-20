@@ -1,8 +1,14 @@
 import torch
 from torch.utils.data import Dataset
+from copy import deepcopy
 
 from datasets_turntaking.features.vad import VadProjection, VAD
-from datasets_turntaking.utils import load_waveform, get_audio_info, time_to_frames
+from datasets_turntaking.utils import (
+    load_waveform,
+    get_audio_info,
+    time_to_frames,
+    find_island_idx_len,
+)
 
 
 def vad_list_to_onehot(vad_list, hop_time, duration, channel_last=False):
@@ -28,23 +34,151 @@ def vad_list_to_onehot(vad_list, hop_time, duration, channel_last=False):
     return vad_tensor
 
 
-class DialogSlidingWindow(Dataset):
+def get_ipu_ends(
+    vad,
+    ipu_pause_frames,
+    ipu_min_frames,
+    audio_duration_frames,
+    audio_context_frames=-1,
+):
+    def get_channel_ipu_ends(vad_channel):
+        """get ipus only based on a single channel"""
+        # ipu = deepcopy(vad_channel)
+        ipu = vad_channel
+        n_frames = vad_channel.shape[0]
+        starts, dur, v = find_island_idx_len(ipu)
+
+        # Pause silences below threshold (ipu_pause_frames)
+        # are filled to join vad-segments to IPU
+        pause_starts = starts[v == 0]
+        pause_dur = dur[v == 0]
+        fill_starts = pause_starts[pause_dur < ipu_pause_frames]
+        fill_dur = pause_dur[pause_dur < ipu_pause_frames]
+
+        # Fill silences below `ipu_pause_frames`
+        for s, d in zip(fill_starts, fill_dur):
+            ipu[s : s + d] = 1
+
+        # get new values for the filled "ipus"
+        starts, dur, v = find_island_idx_len(ipu)
+        # focus on the active segments (vadvalue => 1)
+        starts = starts[v == 1]
+        dur = dur[v == 1]
+
+        # check which IPU segments are above the threshold
+        keep = dur >= ipu_min_frames
+        starts = starts[keep]
+        dur = dur[keep]
+        ends = starts + dur
+
+        # check that the end is not before the required audio context
+        if audio_context_frames > 0:
+            keep = ends >= audio_context_frames
+            ends = ends[keep]
+
+        # remove ipus to close to end of dialog (no future information)
+
+        max_frame = n_frames - (audio_duration_frames - audio_context_frames)
+        keep = ends <= max_frame
+        ends = ends[keep]
+        return ends
+
+    ends0 = get_channel_ipu_ends(vad[:, 0])
+    ends1 = get_channel_ipu_ends(vad[:, 1])
+
+    # ipu = torch.stack((ipu0, ipu1), dim=-1) # _, ipu0 = get_channel_ipus...
+    v = torch.cat((ends0, ends1))
+    s = torch.cat((torch.zeros_like(ends0), torch.ones_like(ends1)))
+    ipu_ends, perm = v.sort()
+    speakers = s[perm]
+    return ipu_ends, speakers
+
+
+def get_ipu_indices(
+    dataset,
+    clip_duration,
+    vad_hop_time,
+    ipu_pause_time,
+    ipu_min_time,
+    audio_context_time,
+):
+    ipu_pause_frames = int(ipu_pause_time / vad_hop_time)
+    ipu_min_frames = int(ipu_min_time / vad_hop_time)
+    audio_context_frames = int(audio_context_time / vad_hop_time)
+    audio_duration_frames = int(clip_duration / vad_hop_time)
+    # print("ipu_pause_frames: ", ipu_pause_frames)
+    # print("ipu_min_frames: ", ipu_min_frames)
+    # print("audio_context_frames: ", audio_context_frames)
+
+    map_to_dset_idx = []
+    map_to_start = []
+    for i, (audio_path, vad) in enumerate(zip(dataset["audio_path"], dataset["vad"])):
+        duration = get_audio_info(audio_path)["duration"]
+        vad_frames = vad_list_to_onehot(
+            vad,
+            hop_time=vad_hop_time,
+            duration=duration,
+            channel_last=True,
+        )
+        ipu_ends, _ = get_ipu_ends(
+            vad=vad_frames,
+            ipu_pause_frames=ipu_pause_frames,
+            ipu_min_frames=ipu_min_frames,
+            audio_duration_frames=audio_duration_frames,
+            audio_context_frames=audio_context_frames,
+        )
+
+        ipu_end_time = ipu_ends * vad_hop_time
+        start_time = ipu_end_time - audio_context_time
+        # end_time = start_time + clip_duration
+        map_to_dset_idx += [i] * start_time.shape[0]
+        map_to_start += start_time.tolist()
+    return map_to_dset_idx, map_to_start
+
+
+def get_sliding_window_indices(dataset, clip_duration, audio_step_time):
+    def get_n_segments(duration):
+        """Number of segments present in a dialog of `duration` seconds."""
+        return int((duration - clip_duration) / audio_step_time + 1)
+
+    start = 0
+    map_to_dset_idx = []
+    # map_to_step = []
+    map_to_start = []
+    for i, path in enumerate(dataset["audio_path"]):
+        duration = get_audio_info(path)["duration"]
+        n_clips = get_n_segments(duration)
+        end = start + n_clips
+        map_to_dset_idx += [i] * (end - start)
+        # map_to_step += list(range(0, n_clips))
+        map_to_start += torch.arange(0, duration, audio_step_time)[:n_clips].tolist()
+        start += end
+    return map_to_dset_idx, map_to_start
+
+
+class DialogAudioDataset(Dataset):
     def __init__(
         self,
         dataset,
         feature_extractor=None,
+        type="sliding",
         # AUDIO #################################
         sample_rate=16000,
         audio_mono=True,
         audio_duration=10,
         audio_normalize=True,
-        audio_overlap=2,  # Special
         # VAD #################################
         vad_hz=100,
         vad_bin_times=[0.2, 0.4, 0.6, 0.8],
         vad_threshold_ratio=0.5,
         vad_history=False,
         vad_history_times=[60, 30, 10, 5],
+        # Sliding #################################
+        audio_overlap=2,  # Sliding Window
+        # IPU #################################
+        ipu_pause_time=0.1,
+        ipu_min_time=0.4,
+        audio_context_time=5,
         # DSET #################################
         flip_channels=True,
         flip_probability=0.5,
@@ -86,11 +220,28 @@ class DialogSlidingWindow(Dataset):
             (torch.tensor(vad_history_times) / self.vad_hop_time).long().tolist()
         )
 
+        # IPU
+        self.ipu_pause_time = ipu_pause_time
+        self.ipu_min_time = ipu_min_time
+        self.audio_context_time = audio_context_time
+
         # Dset
         self.flip_channels = flip_channels
         self.flip_probability = flip_probability
 
-        self.map_to_dset_idx, self.map_to_step = self.get_all_indices()
+        if type == "ipu":
+            self.map_to_dset_idx, self.map_to_start_time = get_ipu_indices(
+                dataset,
+                clip_duration=audio_duration,
+                vad_hop_time=self.vad_hop_time,
+                ipu_pause_time=ipu_pause_time,
+                ipu_min_time=ipu_min_time,
+                audio_context_time=audio_context_time,
+            )
+        else:
+            self.map_to_dset_idx, self.map_to_start_time = get_sliding_window_indices(
+                dataset, audio_duration, self.audio_step_time
+            )
 
     def __repr__(self):
         s = "DialogSlidingWindow"
@@ -125,30 +276,6 @@ class DialogSlidingWindow(Dataset):
 
     def __len__(self):
         return len(self.map_to_dset_idx)
-
-    def get_n_segments(self, duration):
-        """
-        Number of segments present in a dialog of `duration` seconds.
-
-        We must subtract 1 to get the correct number of segments.
-            n = duration / self.audio_step_time
-        finds how many START position exists inside the given duration.
-        However, we must ensure that the end is present as well.
-        """
-        return int(duration / self.audio_step_time) - 1
-
-    def get_all_indices(self):
-        start = 0
-        map_to_dset_idx = []
-        map_to_step = []
-        for i, path in enumerate(self.dataset["audio_path"]):
-            duration = get_audio_info(path)["duration"]
-            n_clips = self.get_n_segments(duration)
-            end = start + n_clips
-            map_to_dset_idx += [i] * (end - start)
-            map_to_step += list(range(0, n_clips))
-            start += end
-        return map_to_dset_idx, map_to_step
 
     def get_sample(self, b, start_time, end_time):
         """Get the sample from the dialog"""
@@ -221,15 +348,10 @@ class DialogSlidingWindow(Dataset):
         ret["vad"] = all_vad_frames[start_frame:end_frame].unsqueeze(0)
         return ret
 
-    def get_start_end_time(self, n_segment):
-        start = int(n_segment * self.audio_step_time)
-        end = start + self.audio_duration
-        return start, end
-
     def __getitem__(self, idx):
         dset_idx = self.map_to_dset_idx[idx]
-        n_segment = self.map_to_step[idx]
-        start_time, end_time = self.get_start_end_time(n_segment)
+        start_time = self.map_to_start_time[idx]
+        end_time = start_time + self.audio_duration
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
 
@@ -242,7 +364,6 @@ class DialogSlidingWindow(Dataset):
 
 
 if __name__ == "__main__":
-
     from datasets_turntaking.dialog_audio.dm_dialog_audio import (
         get_dialog_audio_datasets,
     )
@@ -251,50 +372,31 @@ if __name__ == "__main__":
     from tqdm import tqdm
 
     dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
-    dset = DialogSlidingWindow(dataset=dset_hf, vad_history=True, vad_hz=50)
+
+    dset = DialogAudioDataset(
+        dataset=dset_hf, type="sliding", vad_history=True, vad_hz=50
+    )
+    # dset = DialogAudioDataset(dataset=dset_hf, type='ipu', vad_history=True, vad_hz=50)
     print(dset)
-    dset_idx = 19
-    n_segment = 36
-    idx = 720
+    print("N: ", len(dset))
 
-    b = dset.dataset[dset_idx]
-
-    idx = 737
-    print(dset.map_to_dset_idx[idx])
-    print(dset.map_to_step[idx])
+    idx = 299
     d = dset[idx]
+    for k, v in d.items():
+        if isinstance(v, torch.Tensor):
+            print(f"{k}: {tuple(v.shape)}")
+        else:
+            print(f"{k}: {v}")
 
-    d = dset
-
-    duration = get_audio_info(b["audio_path"])["duration"]
-    print("duration: ", duration)
-
-    n_clips = dset.get_n_segments(duration)
-
-    x, _ = load_waveform(b["audio_path"], sample_rate=16000)
-
-    start_time, end_time = dset.get_start_end_time(n_segment)
-
-    for d in tqdm(dset):
-        pass
-
-    # idx = 299
-    # d = dset[idx]
-    # for k, v in d.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(f"{k}: {tuple(v.shape)}")
-    #     else:
-    #         print(f"{k}: {v}")
-    #
-    # fig, ax = plot_vad_sample(
-    #     waveform=d["waveform"][0],
-    #     vad=d["vad"][0].t(),
-    #     vad_labels=d["vad_label"][0],
-    #     vad_current_frame=None,
-    #     vad_bins=256,
-    #     sample_rate=dset.sample_rate,
-    #     ax=None,
-    #     figsize=(16, 5),
-    #     plot=True,
-    # )
-    # sd.play(d["waveform"][0], samplerate=dset.sample_rate)
+    fig, ax = plot_vad_sample(
+        waveform=d["waveform"][0],
+        vad=d["vad"][0].t(),
+        vad_labels=d["vad_label"][0],
+        vad_current_frame=None,
+        vad_bins=256,
+        sample_rate=dset.sample_rate,
+        ax=None,
+        figsize=(16, 5),
+        plot=True,
+    )
+    sd.play(d["waveform"][0], samplerate=dset.sample_rate)
