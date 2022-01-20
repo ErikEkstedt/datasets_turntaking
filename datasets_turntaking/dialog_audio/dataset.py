@@ -1,7 +1,5 @@
 import torch
 from torch.utils.data import Dataset
-from copy import deepcopy
-
 from datasets_turntaking.features.vad import VadProjection, VAD
 from datasets_turntaking.utils import (
     load_waveform,
@@ -79,7 +77,7 @@ def get_ipu_ends(
         # remove ipus to close to end of dialog (no future information)
 
         max_frame = n_frames - (audio_duration_frames - audio_context_frames)
-        keep = ends <= max_frame
+        keep = ends < max_frame
         ends = ends[keep]
         return ends
 
@@ -130,6 +128,7 @@ def get_ipu_indices(
 
         ipu_end_time = ipu_ends * vad_hop_time
         start_time = ipu_end_time - audio_context_time
+
         # end_time = start_time + clip_duration
         map_to_dset_idx += [i] * start_time.shape[0]
         map_to_start += start_time.tolist()
@@ -340,6 +339,10 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # VAD label
         ##############################################
+        lookahead = torch.zeros(
+            (self.vad_frame_pred, 2)
+        )  # add horizon after end (silence)
+        all_vad_frames = torch.cat((all_vad_frames, lookahead))
         ret["vad_label"] = self.vad_codebook.vad_to_idx(
             all_vad_frames[start_frame + 1 : end_frame + self.vad_frame_pred]
         ).unsqueeze(0)
@@ -354,12 +357,6 @@ class DialogAudioDataset(Dataset):
         end_time = start_time + self.audio_duration
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
-
-        if d["waveform"].shape[1] != int(self.audio_duration * self.sample_rate):
-            print(b["session"])
-            print(d["waveform"].shape)
-            print("dset_idx: ", dset_idx)
-            print("n_segment: ", n_segment)
         return d
 
 
