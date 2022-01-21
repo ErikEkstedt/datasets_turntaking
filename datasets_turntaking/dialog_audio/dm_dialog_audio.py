@@ -125,6 +125,8 @@ class DialogAudioDM(pl.LightningDataModule):
             vad_threshold_ratio=self.vad_threshold_ratio,
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
+            flip_channels=True,
+            flip_probability=0.5,
         )
 
     def setup(self, stage: Optional[str] = "fit"):
