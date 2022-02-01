@@ -267,7 +267,7 @@ if __name__ == "__main__":
     data_conf = DialogAudioDM.load_config()
     DialogAudioDM.print_dm(data_conf)
 
-    data_conf["dataset"]["vad_hz"] = 50
+    data_conf["dataset"]["vad_hz"] = 100
     dm = DialogAudioDM(
         datasets=data_conf["dataset"]["datasets"],
         type=data_conf["dataset"]["type"],
@@ -289,22 +289,24 @@ if __name__ == "__main__":
     dm.setup()
     print(dm)
 
-    # d = dm.val_dset[0]
-    # for k, v in d.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(f"{k}: {tuple(v.shape)}")
-    #     else:
-    #         print(f"{k}: {v}")
-    #
-    # batch = next(iter(dm.train_dataloader()))
-    #
-    # for k, v in batch.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(f"{k}: {tuple(v.shape)}")
-    #     else:
-    #         print(f"{k}: {v}")
+    print("\nBATCH DATASET")
+    d = dm.val_dset[0]
+    for k, v in d.items():
+        if isinstance(v, torch.Tensor):
+            print(f"{k}: {tuple(v.shape)}")
+        else:
+            print(f"{k}: {v}")
 
-    from tqdm import tqdm
+    print("\nBATCH DATALOADER")
+    batch = next(iter(dm.train_dataloader()))
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor):
+            print(f"{k}: {tuple(v.shape)}")
+        else:
+            print(f"{k}: {v}")
 
-    for batch in tqdm(dm.train_dataloader()):
-        pass
+    #############################
+    # from tqdm import tqdm
+    #
+    # for batch in tqdm(dm.train_dataloader()):
+    #     pass

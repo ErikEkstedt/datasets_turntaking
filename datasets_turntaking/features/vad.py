@@ -1,4 +1,4 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Union
 
 import torch
 import torch.nn as nn
@@ -319,21 +319,141 @@ class VAD:
         return ratio, hist_bins
 
 
-class VadProjection:
-    def __init__(self, n_bins, bin_sizes=[20, 40, 60, 80], threshold_ratio=0.5):
+class DialogEvents:
+    @staticmethod
+    def mutual_silences(vad):
+        ds = VAD.vad_to_dialog_vad_states(vad)
+        return ds == 1
+
+    @staticmethod
+    def single_speaker(vad):
+        ds = VAD.vad_to_dialog_vad_states(vad)
+        return torch.logical_or(ds == 0, ds == 3)
+
+    @staticmethod
+    def fill_pauses(vad, prev_speaker, next_speaker, ds):
+        fill_hold = vad.clone()
+        silence = ds == 1
+        same_next_prev = prev_speaker == next_speaker
+        holds_oh = torch.logical_and(silence, same_next_prev)
+        for speaker in [0, 1]:
+            fill_oh = torch.logical_and(holds_oh, next_speaker == speaker)
+            fill = torch.where(fill_oh)
+            fill_hold[(*fill, [speaker] * len(fill[0]))] = 1
+        return fill_hold
+
+    @staticmethod
+    def find_valid_silences(
+        vad, horizon=150, min_context=0, min_duration=0, start_pad=0, target_frames=-1
+    ):
+        max_frames = vad.shape[1] - horizon
+
+        # Fill pauses where appropriate
+        ###############################################
+        prev_speaker = VAD.get_last_speaker(vad)
+        next_speaker = VAD.get_next_speaker(vad)
+        ds = VAD.vad_to_dialog_vad_states(vad)
+
+        ###############################################
+        fill_hold = DialogEvents.fill_pauses(vad, prev_speaker, next_speaker, ds)
+        # ds = ds.cpu()
+
+        ###############################################
+        valid = torch.zeros(vad.shape[:-1], device=vad.device)
+        for nb in range(ds.shape[0]):
+            s, d, v = find_island_idx_len(ds[nb])
+
+            if v[-1] == 1:
+                # if segment ends in mutual silence we can't
+                # lookahead what happens after
+                # thus we omit the last entry
+                s = s[:-1]
+                d = d[:-1]
+                v = v[:-1]
+
+            if len(s) < 1:
+                continue
+
+            sil = torch.where(v == 1)[0]
+            sil_start = s[sil]
+            sil_dur = d[sil]
+            after_sil = s[sil + 1]
+            for ii, start in enumerate(after_sil):
+                if start <= min_context:
+                    continue
+                if sil_start[ii] <= min_context:
+                    continue
+                if start >= max_frames:
+                    break
+
+                total_activity_window = fill_hold[nb, start : start + horizon].sum(
+                    dim=0
+                )
+                # a single channel has no activity
+                if (total_activity_window == 0).sum() == 1:
+                    if sil_dur[ii] < min_duration:
+                        continue
+
+                    vs = sil_start[ii]
+                    vs += start_pad  # pad to get silence away from last activity
+                    end = vs + sil_dur[ii]
+                    if target_frames < 0:
+                        ve = end
+                    else:
+                        ve = vs + target_frames
+                        if ve > end:
+                            continue
+                    valid[nb, vs:ve] = 1
+        return valid
+
+    @staticmethod
+    def find_hold_shifts(vad):
+        prev_speaker = VAD.get_last_speaker(vad)
+        next_speaker = VAD.get_next_speaker(vad)
+        silence = DialogEvents.mutual_silences(vad)
+
+        ab = torch.logical_and(prev_speaker == 0, next_speaker == 1)
+        ab = torch.logical_and(ab, silence)
+        ba = torch.logical_and(prev_speaker == 1, next_speaker == 0)
+        ba = torch.logical_and(ba, silence)
+        aa = torch.logical_and(prev_speaker == 0, next_speaker == 0)
+        aa = torch.logical_and(aa, silence)
+        bb = torch.logical_and(prev_speaker == 1, next_speaker == 1)
+        bb = torch.logical_and(bb, silence)
+
+        # we order by NEXT Speaker
+        shifts = torch.stack((ba, ab), dim=-1)
+        holds = torch.stack((aa, bb), dim=-1)
+        return holds, shifts
+
+
+class ProjectionCodebook(nn.Module):
+    def __init__(
+        self, bin_times=[0.20, 0.40, 0.60, 0.80], frame_hz=100, threshold_ratio=0.5
+    ):
         super().__init__()
-        assert n_bins % 2 == 0, "Must be divisble by two (number of speakers)"
-        assert len(bin_sizes) * 2 == n_bins
-        self.n_bins = n_bins  # the total number of bins n_speaker * bins_per_speaker
-        self.n_classes = 2 ** n_bins
-        self.bin_sizes = bin_sizes
+        self.frame_hz = frame_hz
+        self.bin_sizes = self.time_to_frames(bin_times, frame_hz)
+        self.n_bins = len(self.bin_sizes) * 2
+        self.n_classes = 2 ** self.n_bins
+        self.horizon = sum(self.bin_sizes)
         self.threshold_ratio = threshold_ratio
 
-        # Onehot-representation vectors
         self.codebook = self.init_codebook()
+        self.requires_grad_(False)
 
-        # next speaker: ns
-        self.next_speaker_emb, self.ns2idx = self.init_first_speaker_mapping()
+    def time_to_frames(self, time, frame_hz) -> Union[List, int]:
+        if isinstance(time, list):
+            time = torch.tensor(time)
+
+        frame = time * frame_hz
+
+        if isinstance(frame, torch.Tensor):
+            frame = frame.long().tolist()
+        else:
+            frame = int(frame)
+
+        return frame
 
     def init_codebook(self) -> nn.Module:
         """
@@ -371,111 +491,14 @@ class VadProjection:
         codebook.weight.requires_grad_(False)
         return codebook
 
-    def next_speaker_from_vad_oh(self, x):
+    def horizon_to_onehot(self, vad_projections):
         """
-        Calculates the next speaker in the label.
-        0: speaker 0
-        1: speaker 1
-        2: equal (both active at same time or no activity)
-        Args:
-            x:  torch.Tensor: (2, n_bins)
+        Iterate over the bin boundaries and sum the activity
+        for each channel/speaker.
+        divide by the number of frames to get activity ratio.
+        If ratio is greater than or equal to the threshold_ratio
+        the bin is considered active
         """
-
-        def single(x):
-            first = 2
-            for i in range(x.shape[-1]):
-                tmp_vad = x[:, i]
-                if tmp_vad.sum() == 2:
-                    first = 2
-                    break
-                elif tmp_vad[0] > 0:
-                    first = 0
-                    break
-                elif tmp_vad[1] > 0:
-                    first = 1
-                    break
-            return first
-
-        if x.ndim == 3:  # (N, 2, window)
-            first = []
-            for xxx in x:
-                first.append(single(xxx))
-            first = torch.stack(first)
-        elif x.ndim == 4:  # (B, N, 2, window)
-            first = []
-            for batch_x in x:
-                tmp_first = []
-                for seq_x in batch_x:
-                    tmp_first.append(single(seq_x))
-                first.append(torch.tensor(tmp_first))
-            first = torch.stack(first)
-        else:  # (2, window)
-            first = single(x)
-        return first
-
-    def init_first_speaker_mapping(self) -> Tuple[nn.Module, Dict[int, torch.Tensor]]:
-        """
-        Map all classes and corresponding one-hot representation to a small set of labels
-        which encodes which speaker the first non-zero activity belongs to.
-
-        Used in order to take turns based on future window prediction and whether it would
-        be considered a Shift or a Hold.
-        """
-
-        # 0:A, 1:B, 2:equal
-        ns2idx = {0: [], 1: [], 2: []}  # next-speaker 2 index
-        next_speaker_emb = nn.Embedding(num_embeddings=self.n_classes, embedding_dim=1)
-
-        idx = torch.arange(self.n_classes)
-        vad_labels_oh = self(idx)
-        for i, vl in enumerate(vad_labels_oh):
-            n = self.next_speaker_from_vad_oh(vl)
-            ns2idx[n].append(i)
-            next_speaker_emb.weight.data[i] = n
-
-        # List -> tensors
-        for i, v in ns2idx.items():
-            ns2idx[i] = torch.tensor(v)
-
-        next_speaker_emb.weight.requires_grad_(False)
-        return next_speaker_emb, ns2idx
-
-    def vad_to_projection_window(self, vad):
-        if vad.shape[-2:] == (2, len(self.bin_sizes) * 2):
-            print("vad: ", tuple(vad.shape))
-            vad = rearrange(vad, "... c n -> ... n c")
-            print("vad: ", tuple(vad.shape))
-
-        # extract the horizon, h, segments.
-        # v: (b, t, c, h) or (n, t, h)
-        v = vad.unfold(dimension=-2, size=sum(self.bin_sizes), step=1)
-        return v
-
-    def vad_to_idx(self, vad) -> torch.LongTensor:
-        """
-        Given a sequence of binary VAD information (two channels) we extract a prediction horizon
-        (frame length = the sum of all bin_sizes).
-
-        ! WARNING ! VAD should be shifted one step to get the 'next frame horizon'
-
-        ```python
-        # vad: (B, N, 2)
-        vad_label_idx = VadProjection.vad_to_idx(vad[:, 1:])
-        ```
-
-        Arguments:
-            vad:        torch.Tensor, (b, n, c) or (n, c)
-
-        Returns:
-            classes:    torch.Tensor (b, t) or (t,)
-        """
-        vad_projections = self.vad_to_projection_window(vad)
-
-        # Iterate over the bin boundaries and sum the activity
-        # for each channel/speaker.
-        # divide by the number of frames to get activity ratio.
-        # If ratio is greater than or equal to the threshold_ratio
-        # the bin is considered active
         start = 0
         v_bins = []
         for b in self.bin_sizes:
@@ -487,81 +510,57 @@ class VadProjection:
         v_bins = torch.stack(v_bins, dim=-1)  # (*, t, c, n_bins)
         # Treat the 2-channel activity as a single binary sequence
         v_bins = v_bins.flatten(-2)  # (*, t, c, n_bins) -> (*, t, (c n_bins))
+        return rearrange(v_bins, "... (c d) -> ... c d", c=2)
 
-        # How to map d binary digits to classes?
-        # We treat them as a binary sequences and their
-        # Decimal number is the corresponding class index
-
-        # Extract the decimal value according to position
-        # (the order does not matter and we may start fram small->large)
-        # which is our "query" vector.
-        # i.e.  [1, 2, 4, 8, 16, ...]
-        d = v_bins.shape[-1]
-        q = torch.tensor([2.0 ** i for i in range(d)])
-
-        # We calculate the dot product (multiply and sum)
-        # given the binary values in `v_bins` and the query vector
-        # which result in the Decimal value and class index
-        if v_bins.ndim == 2:  # single vad
-            binary_val = torch.einsum("t d, d -> t", v_bins, q)
-        else:  # batched vad
-            binary_val = torch.einsum("b t d, d -> b t", v_bins, q)
-        return binary_val.long()
-
-    def first_speaker_probs(self, logits, probs=None) -> torch.Tensor:
-        if probs is None:
-            probs = logits.softmax(dim=-1)
-        a_idx = self.ns2idx[0]
-        b_idx = self.ns2idx[1]
-        c_idx = self.ns2idx[2]
-        a_probs = probs[..., a_idx].sum(dim=-1)
-        b_probs = probs[..., b_idx].sum(dim=-1)
-        c_probs = probs[..., c_idx].sum(dim=-1)
-        return torch.stack([a_probs, b_probs, c_probs], dim=-1)
-
-    def get_hold_shift_probs(
-        self, logits=None, vad=None, probs=None
-    ) -> Dict[str, torch.Tensor]:
+    def vad_to_label_oh(self, vad) -> torch.Tensor:
         """
-        Extracts the speaker probs organized into Hold/Shifts.
+        Given a sequence of binary VAD information (two channels) we extract a prediction horizon
+        (frame length = the sum of all bin_sizes).
 
-        From the prediction side we only need to know who the previous speaker
-        was and, for holds, map the probability associated with that speaker being
-        the same as the predicted. i.e.
+        ! WARNING ! VAD is expected to be shifted one step to get the 'next frame horizon'
 
-        Hold:
-            if last speaker was 0 then the probabilities associated with 0 being
-            the next speaker is a HOLD prediction.
-            And the opposite is true for Shift.
+        ```python
+        # vad: (B, N, 2)
+        # DO THIS
+        vad_label_idx = VadProjection.vad_to_idx(vad[:, 1:])
+        ```
+
+        Arguments:
+            vad:        torch.Tensor, (b, n, c) or (n, c)
         """
-        speaker_probs = self.first_speaker_probs(logits, probs)
-        last_speaker = VAD.get_last_speaker(vad)
+        # (b, n, c) -> (b, N, c, M), M=horizon window size, N=valid frames
+        vad_projections = vad.unfold(dimension=-2, size=sum(self.bin_sizes), step=1)
 
-        hold = torch.zeros_like(speaker_probs[..., 0])
-        shift = torch.zeros_like(hold)
+        # (b, N, c, M) -> (B, N, 2, len(self.bin_sizes))
+        v_bins = self.horizon_to_onehot(vad_projections)
+        return v_bins
 
-        a_is_previous_speaker = last_speaker == 0
-        b_is_previous_speaker = last_speaker == 1
+    def vad_to_label_idx(self, vad) -> torch.Tensor:
+        """
+        Given a sequence of binary VAD information (two channels) we extract a prediction horizon
+        (frame length = the sum of all bin_sizes).
 
-        hold[a_is_previous_speaker] = speaker_probs[..., 0][a_is_previous_speaker]
-        hold[b_is_previous_speaker] = speaker_probs[..., 1][b_is_previous_speaker]
+        ! WARNING ! VAD is shifted one step to get the 'next frame horizon'
 
-        shift[a_is_previous_speaker] = speaker_probs[..., 1][a_is_previous_speaker]
-        shift[b_is_previous_speaker] = speaker_probs[..., 0][b_is_previous_speaker]
-        return {
-            "hold": hold,
-            "shift": shift,
-            "speaker": speaker_probs,
-            "last_speaker": last_speaker,
-        }
+        ```python
+        # vad: (B, N, 2)
+        # DONT DO THIS
+        vad_label_idx = VadProjection.vad_to_idx(vad[:, 1:])
+        ```
 
-    def get_next_speaker(self, idx) -> torch.Tensor:
-        self.next_speaker_emb.to(idx.device)
-        return self.next_speaker_emb(idx).squeeze(-1).long()
+        Arguments:
+            vad:        torch.Tensor, (b, n, c) or (n, c)
 
-    @torch.no_grad()
+        Returns:
+            classes:    torch.Tensor (b, t) or (t,)
+        """
+        v_bins = self.vad_to_label_oh(vad)
+        return self.onehot_to_idx(v_bins)
+
     def onehot_to_idx(self, x) -> torch.Tensor:
         """
+        The inverse of the 'forward' function.
+
         Arguments:
             x:          torch.Tensor (*, 2, 4)
 
@@ -585,332 +584,384 @@ class VadProjection:
         embed_ind = embed_ind.view(*shape[:-2])
         return embed_ind
 
-    @torch.no_grad()
-    def __call__(self, idx) -> torch.Tensor:
-        self.codebook.to(idx.device)
-        vector_1d = self.codebook(idx)
-        return vector_1d.view(
-            (*vector_1d.shape[:-1], 2, self.n_bins // 2)
-        )  # (..., 2, n_bins)
+    def idx_to_onehot(self, idx):
+        v = self.codebook(idx)
+        return rearrange(v, "... (c b) -> ... c b", c=2)
 
-    # Metrics & Evaluation
-    def get_topk_acc(self, topk_idx, label):
-        if topk_idx.ndim > label.ndim:
-            label = label.unsqueeze(-1)
-        K = topk_idx.shape[-1]
-        correct = (topk_idx == label).float()
-        acc = []
-        for i in range(1, K + 1):
-            s = (correct[..., :i].sum(dim=-1) > 0).float().mean()
-            acc.append(s)
-        acc = torch.stack(acc)
-        return acc, label.nelement()
+    def forward(self, idx):
+        return self.idx_to_onehot(idx)
 
-    def average_prob(self, probs, where_onehot):
-        if where_onehot.sum() == 0:
-            return None, None
-        ids = torch.where(where_onehot)
-        return probs[ids].mean().cpu(), where_onehot.sum()
 
-    def topk_acc_specific_frames(self, topk_ns, label_ns, where_onehot):
-        """
-        separate hold/shift topk accuracy using the `next_speaker` labels and predictions.
-
-        If the model predicts the correct next-speaker for the `HOLD` frames (`where_onehot`) then
-        the hold guess is correct. Symmetrically this is true for shifts as well.
-        """
-
-        # Check if relevant segments exists
-        n = where_onehot.sum()
-        if n == 0:
-            return None, None
-
-        # k provided
-        K = topk_ns.shape[-1]
-
-        # where are frames for shift/hold
-        ids = torch.where(where_onehot)
-        y = label_ns[ids]  # next_speaker labels
-        y_top = topk_ns[ids]  # predicted next speaker topk
-        correct_ns = y.unsqueeze(-1) == y_top  # compare
-
-        # Loop over the k to find if the model prediction is correct
-        # in prediction 0 -> k
-        # If the correct speaker is in the topk then we get a correct prediction
-        # for that given k
-        topk_acc = []
-        for i in range(1, K + 1):
-            s = (correct_ns[..., :i].sum(dim=-1) > 0).float().mean()
-            topk_acc.append(s)
-        return torch.stack(topk_acc), n
-
-    def get_turn_labels_and_predictions(
-        self, topk_ns, label_ns, hold_one_hot, shift_one_hot
+class VadProjection(ProjectionCodebook):
+    def __init__(
+        self,
+        bin_times=[0.2, 0.4, 0.6, 0.8],
+        vad_threshold=0.5,
+        pred_threshold=0.5,
+        event_min_context=100,
+        event_min_duration=20,
+        event_horizon=100,
+        event_start_pad=10,
+        event_target_duration=10,
+        frame_hz=100,
     ):
+        super().__init__(bin_times, frame_hz, vad_threshold)
+        # Minimum amount of context frame in dialog-segment
+        self.event_min_context = self.time_to_frames(event_min_context, frame_hz)
+
+        # The shift/hold must be at least this many frames
+        self.event_min_duration = self.time_to_frames(event_min_duration, frame_hz)
+
+        # The future horizon which defines VALID events to measure
+        self.event_horizon = self.time_to_frames(event_horizon, frame_hz)
+
+        # Offset the start frame after last speaker is finished
+        self.event_start_pad = self.time_to_frames(event_start_pad, frame_hz)
+
+        # Minimum amount of valid frames in each dialog event
+        self.event_target_duration = self.time_to_frames(
+            event_target_duration, frame_hz
+        )
+
+        # indices for extracting turn-taking metrics
+        self.on_silent_shift, self.on_silent_hold = self.init_on_silent_shift()
+        self.on_active_shift, self.on_active_hold = self.init_on_activity_shift()
+
+        # Shift/Hold Threshold
+        # The probability of a shift/hold must be over this threshold
+        # to be considered a positive prediction
+        self.pred_threshold = pred_threshold
+
+    def __repr__(self):
+        s = "VadProjection\n"
+        s += f"\tframe_hz: {self.frame_hz}\n"
+        s += f"\tbin_sizes: {self.bin_sizes}\n"
+        s += f"\tevent_min_context: {self.event_min_context}\n"
+        s += f"\tevent_min_duration: {self.event_min_duration}\n"
+        s += f"\tevent_horizon: {self.event_horizon}\n"
+        s += f"\tevent_start_pad: {self.event_start_pad}\n"
+        s += f"\tevent_target_duration: {self.event_target_duration}\n"
+        s += f"\tpred_threshold: {self.pred_threshold}\n"
+        return s
+
+    ############# MONO ######################################
+    def _all_permutations_mono(self, n, start=0):
+        vectors = []
+        for i in range(start, 2 ** n):
+            i = bin(i).replace("0b", "").zfill(n)
+            tmp = torch.zeros(n)
+            for j, val in enumerate(i):
+                tmp[j] = float(val)
+            vectors.append(tmp)
+        return torch.stack(vectors)
+
+    def _end_of_segment_mono(self, n, max=3):
         """
-        From 'next speaker' prediction/labels we extract the hold/shift predictions based
-        on `hold_one_hot`/`shift_one_hot`
+        # 0, 0, 0, 0
+        # 1, 0, 0, 0
+        # 1, 1, 0, 0
+        # 1, 1, 1, 0
         """
-        turn_label = []
-        pred = []
-        if hold_one_hot.sum() > 0:
-            ids = torch.where(hold_one_hot)
-            hold_lab = label_ns[ids]
-            hold_pred = topk_ns[ids]
-            # all correct preds (for hold) is set to 0
-            # and incorrect to 1.
-            hold_pred = (hold_pred != hold_lab.unsqueeze(-1)).float()
-            pred.append(hold_pred)
-            # Hold -> class = 0
-            turn_label.append(torch.zeros(hold_one_hot.sum(), dtype=torch.long))
+        v = torch.zeros((max + 1, n))
+        for i in range(max):
+            v[i + 1, : i + 1] = 1
+        return v
 
-        if shift_one_hot.sum() > 0:
-            ids = torch.where(shift_one_hot)
-            shift_lab = label_ns[ids]
-            shift_pred = topk_ns[ids]
-            # all correct preds (for shift) is set to 1
-            # and incorrect to 0.
-            shift_pred = (shift_pred == shift_lab.unsqueeze(-1)).float()
-            pred.append(shift_pred)
-            # Shift -> class = 1
-            turn_label.append(torch.ones(shift_one_hot.sum(), dtype=torch.long))
+    def _on_activity_change_mono(self, n=4, min_active=2):
+        """
 
-        if len(pred) == 0:
-            return None, None
+        Used where a single speaker is active. This vector (single speaker) represents
+        the classes we use to infer that the current speaker will end their activity
+        and the other take over.
 
-        pred = torch.cat(pred)
-        turn_label = torch.cat(turn_label).long()
-        return pred, turn_label
+        the `min_active` variable corresponds to the minimum amount of frames that must
+        be active AT THE END of the projection window (for the next active speaker).
+        This used to not include classes where the activity may correspond to a short backchannel.
+        e.g. if only the last bin is active it may be part of just a short backchannel, if we require 2 bins to
+        be active we know that the model predicts that the continuation will be at least 2 bins long and thus
+        removes the ambiguouty (to some extent) about the prediction.
+        """
 
-    def prepare_class_metrics(self, out, batch, min_context_frames=0, k=5, cpu=False):
-        vad = batch["vad"]
-        vad_label = batch["vad_label"]
-        probs_vp = out["logits_vp"].softmax(dim=-1)
+        base = torch.zeros(n)
+        # force activity at the end
+        if min_active > 0:
+            base[-min_active:] = 1
 
-        topk_probs, topk_idx = probs_vp.topk(k)
+        # get all permutations for the remaining bins
+        permutable = n - min_active
+        if permutable > 0:
+            perms = self._all_permutations_mono(permutable)
+            base = base.repeat(perms.shape[0], 1)
+            base[:, :permutable] = perms
+        return base
 
-        hold_one_hot, shift_one_hot = VAD.get_hold_shift_onehot(vad)
-        topk_ns = self.get_next_speaker(topk_idx)
-        label_ns = self.get_next_speaker(vad_label)
-        turn_probs = self.get_hold_shift_probs(logits=out["logits_vp"], vad=vad)
+    def _combine_speakers(self, x1, x2, mirror=False):
+        if x1.ndim == 1:
+            x1 = x1.unsqueeze(0)
+        if x2.ndim == 1:
+            x2 = x2.unsqueeze(0)
+        vad = []
+        for a in x1:
+            for b in x2:
+                vad.append(torch.stack((a, b), dim=0))
 
-        ######################################################################
-        if min_context_frames > 0:
-            topk_idx = topk_idx[:, min_context_frames:]
-            label_ns = label_ns[:, min_context_frames:]
-            topk_ns = topk_ns[:, min_context_frames:]
-            topk_probs = topk_probs[:, min_context_frames:]
-            # Hold/Shift
-            hold_one_hot = hold_one_hot[:, min_context_frames:]
-            shift_one_hot = shift_one_hot[:, min_context_frames:]
-            turn_probs["shift"] = turn_probs["shift"][:, min_context_frames:]
-            turn_probs["hold"] = turn_probs["hold"][:, min_context_frames:]
-            turn_probs["speaker"] = turn_probs["speaker"][:, min_context_frames:]
-            # VAD
-            vad_label = vad_label[:, min_context_frames:]
-            vad = vad[:, min_context_frames:]
+        vad = torch.stack(vad)
+        if mirror:
+            vad = torch.stack((vad, torch.stack((vad[:, 1], vad[:, 0]), dim=1)))
+        return vad
 
-        if cpu:
-            topk_idx = topk_idx.cpu()
-            label_ns = label_ns.cpu()
-            topk_ns = topk_ns.cpu()
-            topk_probs = topk_probs.cpu()
-            # Hold/Shift
-            hold_one_hot = hold_one_hot.cpu()
-            shift_one_hot = shift_one_hot.cpu()
-            turn_probs["shift"] = turn_probs["shift"].cpu()
-            turn_probs["hold"] = turn_probs["hold"].cpu()
-            turn_probs["speaker"] = turn_probs["speaker"].cpu()
-            # VAD
-            vad_label = vad_label.cpu()
-            vad = vad.cpu()
+    def _sort_idx(self, x):
+        if x.ndim == 1:
+            x, _ = x.sort()
+        elif x.ndim == 2:
+            if x.shape[0] == 2:
+                a, _ = x[0].sort()
+                b, _ = x[1].sort()
+                x = torch.stack((a, b))
+            else:
+                x, _ = x[0].sort()
+                x = x.unsqueeze(0)
+        return x
 
-        ######################################################################
-        # find "nucleus" subset
-        # p = 0.8
-        # tp = topk_probs.cumsum(dim=-1)
-        # tp = tp[tp <= 0.8]
-        # tpk = topk_idx[: len(tp)]
-        # top_p_speaker_probs = self.get_hold_shift_probs(vad=vad, probs=tp)
+    ############# MONO ######################################
+    def init_on_silent_shift(self):
+        """
+        During mutual silences we wish to infer which speaker the model deems most likely.
 
-        ######################################################################
-        silence_onehot = (vad.sum(dim=-1) == 0).float()
+        We focus on classes where only a single speaker is active in the projection window,
+        renormalize the probabilities on this subset, and determine which speaker is the most
+        likely next speaker.
+        """
 
-        # TopK label classification
-        class_topk, n = self.get_topk_acc(topk_idx, vad_label)
-        class_sil_topk, class_sil_n = self.topk_acc_specific_frames(
-            topk_idx, vad_label, silence_onehot
-        )
+        n = len(self.bin_sizes)
 
-        # Next Speaker topK
-        ns_topk, n = self.get_topk_acc(topk_ns, label_ns)
-        ns_sil_topk, ns_sil_n = self.topk_acc_specific_frames(
-            topk_ns, label_ns, silence_onehot
-        )
+        # active channel: At least 1 bin is active -> all permutations (all except the no-activity)
+        # active = self._all_permutations_mono(n, start=1)  # at least 1 active
+        # active channel: At least 1 bin is active -> all permutations (all except the no-activity)
+        active = self._on_activity_change_mono(n, min_active=2)
+        # non-active channel: zeros
+        non_active = torch.zeros((1, active.shape[-1]))
+        # combine
+        shift_oh = self._combine_speakers(active, non_active, mirror=True)
+        shift = self.onehot_to_idx(shift_oh)
+        shift = self._sort_idx(shift)
 
-        ######################################################################
-        # TURN: Shift/Hold
-        # Average probability of shift/hold during shift/hold frames
-        hold_prob, n_hold = self.average_prob(turn_probs["hold"], hold_one_hot)
-        shift_prob, n_shift = self.average_prob(turn_probs["shift"], shift_one_hot)
-        # n_hold = hold_one_hot.sum()
-        # n_shift = shift_one_hot.sum()
+        # symmetric, this is strictly unneccessary but done for convenience and to be similar
+        # to 'get_on_activity_shift' where we actually have asymmetric classes for hold/shift
+        hold = shift.flip(0)
+        return shift, hold
 
-        # TopK hold/shift acc
-        hold_topk, _ = self.topk_acc_specific_frames(topk_ns, label_ns, hold_one_hot)
-        shift_topk, _ = self.topk_acc_specific_frames(topk_ns, label_ns, shift_one_hot)
+    def init_on_activity_shift(self):
+        n = len(self.bin_sizes)
 
-        # Prediction/Label classes for F1 hold/shift metric
-        turn_pred, turn_label = self.get_turn_labels_and_predictions(
-            topk_ns=topk_ns,
-            label_ns=label_ns,
-            hold_one_hot=hold_one_hot,
-            shift_one_hot=shift_one_hot,
-        )
-        return {
-            "class": {"topk": class_topk, "n": n},
-            "class_silence": {"topk": class_sil_topk, "n": class_sil_n},
-            "next_speaker": {"topk": ns_topk, "n": n},
-            "next_speaker_silence": {"topk": ns_sil_topk, "n": ns_sil_n},
-            "hold": {"topk": hold_topk, "prob": hold_prob, "n": n_hold},
-            "shift": {"topk": shift_topk, "prob": shift_prob, "n": n_shift},
-            "turn": {"prediction": turn_pred, "label": turn_label},
+        # Shift subset
+        eos = self._end_of_segment_mono(n, max=2)
+        nav = self._on_activity_change_mono(n, min_active=2)
+        shift_oh = self._combine_speakers(nav, eos, mirror=True)
+        shift = self.onehot_to_idx(shift_oh)
+        shift = self._sort_idx(shift)
+
+        # Don't shift subset
+        eos = self._on_activity_change_mono(n, min_active=2)
+        zero = torch.zeros((1, n))
+        hold_oh = self._combine_speakers(zero, eos, mirror=True)
+        hold = self.onehot_to_idx(hold_oh)
+        hold = self._sort_idx(hold)
+        return shift, hold
+
+    #############################################################
+    def get_marginal_probs(self, probs, pos_idx, neg_idx):
+        p = []
+        for next_speaker in [0, 1]:
+            joint = torch.cat((pos_idx[next_speaker], neg_idx[next_speaker]), dim=-1)
+            p_sum = probs[..., joint].sum(dim=-1)
+            p.append(probs[..., pos_idx[next_speaker]].sum(dim=-1) / p_sum)
+        return torch.stack(p, dim=-1)
+
+    def get_silence_shift_probs(self, probs):
+        return self.get_marginal_probs(probs, self.on_silent_shift, self.on_silent_hold)
+
+    def get_active_shift_probs(self, probs):
+        return self.get_marginal_probs(probs, self.on_active_shift, self.on_active_hold)
+
+    def get_next_speaker_probs(self, probs, vad):
+        sil_probs = self.get_silence_shift_probs(probs)
+        act_probs = self.get_active_shift_probs(probs)
+
+        p_a = torch.zeros_like(sil_probs[..., 0])
+        p_b = torch.zeros_like(sil_probs[..., 0])
+
+        # dialog states
+        ds = VAD.vad_to_dialog_vad_states(vad)
+        silence = ds == 1
+        a_current = ds == 0
+        b_current = ds == 3
+        both = ds == 2
+
+        # silence
+        w = torch.where(silence)
+        p_a[w] = sil_probs[w][..., 0]
+        p_b[w] = sil_probs[w][..., 1]
+
+        # A current speaker
+        w = torch.where(a_current)
+        p_b[w] = act_probs[w][..., 1]
+        p_a[w] = 1 - act_probs[w][..., 1]
+
+        # B current speaker
+        w = torch.where(b_current)
+        p_a[w] = act_probs[w][..., 0]
+        p_b[w] = 1 - act_probs[w][..., 0]
+
+        # Both
+        w = torch.where(both)
+        # Re-Normalize and compare next-active
+        sum = act_probs[w][..., 0] + act_probs[w][..., 1]
+        p_a[w] = act_probs[w][..., 0] / sum
+        p_b[w] = act_probs[w][..., 1] / sum
+        return torch.stack((p_a, p_b), dim=-1)
+
+    def speaker_prob_to_shift(self, probs, vad):
+        assert probs.ndim == 3, "Assumes probs.shape = (B, N, 2)"
+
+        shift_probs = torch.zeros(probs.shape[:-1])
+
+        # dialog states
+        ds = VAD.vad_to_dialog_vad_states(vad)
+        silence = ds == 1
+        a_current = ds == 0
+        b_current = ds == 3
+        prev_speaker = VAD.get_last_speaker(vad)
+
+        # A active -> B = 1 is next_speaker
+        w = torch.where(a_current)
+        shift_probs[w] = p_next[w][..., 1]
+        # B active -> A = 0 is next_speaker
+        w = torch.where(b_current)
+        shift_probs[w] = p_next[w][..., 0]
+        # silence and A was previous speaker -> B = 1 is next_speaker
+        w = torch.where(torch.logical_and(silence, prev_speaker == 0))
+        shift_probs[w] = p_next[w][..., 1]
+        # silence and B was previous speaker -> A = 0 is next_speaker
+        w = torch.where(torch.logical_and(silence, prev_speaker == 1))
+        shift_probs[w] = p_next[w][..., 0]
+        return shift_probs
+
+    def extract_acc(self, p_next, shift, hold):
+        ret = {
+            "shift": {"correct": 0.0, "n": 0.0},
+            "hold": {"correct": 0.0, "n": 0.0},
         }
+        # shifts
+        next_speaker = 0
+        w = torch.where(shift[..., next_speaker])
+        if len(w[0]) > 0:
+            sa = (p_next[w][..., next_speaker] > self.pred_threshold).sum().item()
+            ret["shift"]["correct"] += sa
+            ret["shift"]["n"] += len(w[0])
+        next_speaker = 1
+        w = torch.where(shift[..., next_speaker])
+        if len(w[0]) > 0:
+            sb = (p_next[w][..., next_speaker] > self.pred_threshold).sum().item()
+            ret["shift"]["correct"] += sb
+            ret["shift"]["n"] += len(w[0])
+        # holds
+        next_speaker = 0
+        w = torch.where(hold[..., next_speaker])
+        if len(w[0]) > 0:
+            ha = (p_next[w][..., next_speaker] > self.pred_threshold).sum().item()
+            ret["hold"]["correct"] += ha
+            ret["hold"]["n"] += len(w[0])
+        next_speaker = 1
+        w = torch.where(hold[..., next_speaker])
+        if len(w[0]) > 0:
+            hb = (p_next[w][..., next_speaker] > self.pred_threshold).sum().item()
+            ret["hold"]["correct"] += hb
+            ret["hold"]["n"] += len(w[0])
+        return ret
 
-    # Metrics & Evaluation
-    def prepare_regression_metrics(
-        self, out, batch, min_context_frames=0, k=5, cpu=False
-    ):
-        vad = batch["vad"]
-        vad_label = batch["vad_label"]
-        vp = out["logits_vp"].sigmoid().round()
-        topk_idx = self.onehot_to_idx(vp).unsqueeze(-1)
-        # topk_probs, topk_idx = probs_vp.topk(k)
+    def forward(self, logits, vad):
+        probs = logits.softmax(dim=-1)
+        p_next = self.get_next_speaker_probs(probs, vad)
 
-        hold_one_hot, shift_one_hot = VAD.get_hold_shift_onehot(vad)
-        topk_ns = self.get_next_speaker(topk_idx)
-        label_ns = self.get_next_speaker(vad_label)
+        ret = {}
 
-        ######################################################################
-        if min_context_frames > 0:
-            topk_idx = topk_idx[:, min_context_frames:]
-            label_ns = label_ns[:, min_context_frames:]
-            topk_ns = topk_ns[:, min_context_frames:]
-            # Hold/Shift
-            hold_one_hot = hold_one_hot[:, min_context_frames:]
-            shift_one_hot = shift_one_hot[:, min_context_frames:]
-            # VAD
-            vad_label = vad_label[:, min_context_frames:]
-            vad = vad[:, min_context_frames:]
-
-        if cpu:
-            topk_idx = topk_idx.cpu()
-            label_ns = label_ns.cpu()
-            topk_ns = topk_ns.cpu()
-            # Hold/Shift
-            hold_one_hot = hold_one_hot.cpu()
-            shift_one_hot = shift_one_hot.cpu()
-            # VAD
-            vad_label = vad_label.cpu()
-            vad = vad.cpu()
-
-        ######################################################################
-        # find "nucleus" subset
-        # p = 0.8
-        # tp = topk_probs.cumsum(dim=-1)
-        # tp = tp[tp <= 0.8]
-        # tpk = topk_idx[: len(tp)]
-        # top_p_speaker_probs = self.get_hold_shift_probs(vad=vad, probs=tp)
-
-        ######################################################################
-        silence_onehot = (vad.sum(dim=-1) == 0).float()
-
-        # TopK label classification
-        class_topk, n = self.get_topk_acc(topk_idx, vad_label)
-        class_sil_topk, class_sil_n = self.topk_acc_specific_frames(
-            topk_idx, vad_label, silence_onehot
+        # TEST PLACES
+        # Valid shift/hold
+        valid = DialogEvents.find_valid_silences(
+            vad,
+            horizon=self.event_horizon,
+            min_context=self.event_min_context,
+            min_duration=self.event_min_duration,
+            start_pad=self.event_start_pad,
+            target_frames=self.event_target_duration,
         )
-
-        # Next Speaker topK
-        ns_topk, n = self.get_topk_acc(topk_ns, label_ns)
-        ns_sil_topk, ns_sil_n = self.topk_acc_specific_frames(
-            topk_ns, label_ns, silence_onehot
+        hold, shift = DialogEvents.find_hold_shifts(vad)
+        hold, shift = torch.logical_and(hold, valid.unsqueeze(-1)), torch.logical_and(
+            shift, valid.unsqueeze(-1)
         )
+        ret["event"] = {"hold": hold, "shift": shift}
 
-        ######################################################################
-        # TURN: Shift/Hold
-        # Average probability of shift/hold during shift/hold frames
-        n_hold = hold_one_hot.sum()
-        n_shift = shift_one_hot.sum()
-
-        # TopK hold/shift acc
-        hold_topk, _ = self.topk_acc_specific_frames(topk_ns, label_ns, hold_one_hot)
-        shift_topk, _ = self.topk_acc_specific_frames(topk_ns, label_ns, shift_one_hot)
-
-        # Prediction/Label classes for F1 hold/shift metric
-        turn_pred, turn_label = self.get_turn_labels_and_predictions(
-            topk_ns=topk_ns,
-            label_ns=label_ns,
-            hold_one_hot=hold_one_hot,
-            shift_one_hot=shift_one_hot,
-        )
-        return {
-            "class": {"topk": class_topk, "n": n},
-            "class_silence": {"topk": class_sil_topk, "n": class_sil_n},
-            "next_speaker": {"topk": ns_topk, "n": n},
-            "next_speaker_silence": {"topk": ns_sil_topk, "n": ns_sil_n},
-            "hold": {"topk": hold_topk, "n": n_hold},
-            "shift": {"topk": shift_topk, "n": n_shift},
-            "turn": {"prediction": turn_pred, "label": turn_label},
-        }
-
-    def prepare_metrics(self, out, batch, min_context_frames=0, k=5, cpu=False):
-        if out["logits_vp"].ndim == 4:
-            return self.prepare_regression_metrics(
-                out, batch, min_context_frames, k=k, cpu=cpu
-            )
-        else:
-            return self.prepare_class_metrics(out, batch, min_context_frames, k, cpu)
+        # Hold/Shift Acc
+        res_shift_hold = self.extract_acc(p_next, shift, hold)
+        ret.update(res_shift_hold)
+        return ret
 
 
 if __name__ == "__main__":
-    from datasets_turntaking.dm_dialog_audio import get_dialog_audio_datasets
     from datasets_turntaking.utils import get_audio_info
+    from datasets_turntaking.dialog_audio.dataset import DialogAudioDataset
+    from datasets_turntaking.dialog_audio.dm_dialog_audio import (
+        get_dialog_audio_datasets,
+    )
 
-    # dloader = quick_load_dataloader()
-    # batch = next(iter(dloader))
-    # vad = batch["vad"]
-    # vad_labels = batch["vad_label"]
-    # vad_labels_oh = codebook_vad(vad_labels)
-    # print("vad_labels: ", tuple(vad_labels.shape), vad_labels.dtype)
-    # print("vad_labels_oh: ", tuple(vad_labels_oh.shape), vad_labels_oh.dtype)
-
-    # Load dataset
     dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
-    d = dset_hf[0]
-    print("d: ", d.keys())
-    vad = d["vad"]
-    info = get_audio_info(d["audio_path"])
-    duration = info["duration"]
 
-    # Extract VAD frames
-    channel_last = True
-    vad_frames = VAD.vad_list_to_onehot(
-        d["vad"],
-        sample_rate=16000,
-        hop_length=160,
-        duration=duration,
-        channel_last=channel_last,
+    dset = DialogAudioDataset(
+        dataset=dset_hf, type="sliding", vad_history=True, vad_hz=50
     )
-    print("vad_frames: ", tuple(vad_frames.shape))  # (N, 2)
-    bin_end_frames = [6000, 3000, 1000, 500]
-    # Extract VAD History
-    vad_history, hist = VAD.get_activity_history(
-        vad_frames, bin_end_frames=bin_end_frames, channel_last=channel_last
-    )
-    print("vad_history: ", tuple(vad_history.shape))
+    # dset = DialogAudioDataset(dataset=dset_hf, type='ipu', vad_history=True, vad_hz=50)
+    print(dset)
+    print("N: ", len(dset))
+    idx = 299
+    d = dset[idx]
+    for k, v in d.items():
+        if isinstance(v, torch.Tensor):
+            print(f"{k}: {tuple(v.shape)}")
+        else:
+            print(f"{k}: {v}")
+
+    # # Extract VAD frames
+    # channel_last = True
+    # vad_frames = VAD.vad_list_to_onehot(
+    #     d["vad"],
+    #     sample_rate=16000,
+    #     hop_length=160,
+    #     duration=duration,
+    #     channel_last=channel_last,
+    # )
+    # print("vad_frames: ", tuple(vad_frames.shape))  # (N, 2)
+    #
+    # bin_end_frames = [6000, 3000, 1000, 500]
+    # # Extract VAD History
+    # vad_history, hist = VAD.get_activity_history(
+    #     vad_frames, bin_end_frames=bin_end_frames, channel_last=channel_last
+    # )
+    # print("vad_history: ", tuple(vad_history.shape))
 
     # Extract VAD prediction labels
-    codebook_vad = VadProjection(n_bins=8)
-    vad_labels = codebook_vad.vad_to_idx(vad_frames[1:])
-    vad_labels_oh = codebook_vad(vad_labels)
+    # codebook_vad = VadProjection(n_bins=8)
+    # vad_labels = codebook_vad.vad_to_idx(vad_frames[1:])
+    # vad_labels_oh = codebook_vad(vad_labels)
+
+    vad_projection = VadProjection(
+        bin_times=[0.2, 0.4, 0.6, 0.8],
+        vad_threshold=0.5,
+        pred_threshold=0.5,
+        event_min_context=1.0,
+        event_min_duration=0.15,
+        event_horizon=1.0,
+        event_start_pad=0.05,
+        event_target_duration=0.10,
+        frame_hz=100,
+    )

@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import Dataset
-from datasets_turntaking.features.vad import VadProjection, VAD
+from datasets_turntaking.features.vad import ProjectionCodebook, VAD
 from datasets_turntaking.utils import (
     load_waveform,
     get_audio_info,
@@ -206,10 +206,15 @@ class DialogAudioDataset(Dataset):
 
         # Vad prediction labels
         self.vad_frame_pred = sum(self.vad_bin_sizes)
-        self.vad_codebook = VadProjection(
-            n_bins=2 * len(self.vad_bin_sizes),
-            bin_sizes=self.vad_bin_sizes,
-            threshold_ratio=self.vad_threshold_ratio,
+        # self.vad_codebook = VadProjectionOld(
+        #     n_bins=2 * len(self.vad_bin_sizes),
+        #     bin_sizes=self.vad_bin_sizes,
+        #     threshold_ratio=self.vad_threshold_ratio,
+        # )
+        self.vad_codebook = ProjectionCodebook(
+            bin_times=vad_bin_times,
+            frame_hz=vad_hz,
+            threshold_ratio=vad_threshold_ratio,
         )
 
         # Vad history
@@ -334,7 +339,9 @@ class DialogAudioDataset(Dataset):
                 bin_end_frames=self.vad_history_frames,
                 channel_last=True,
             )
-            ret["vad_history"] = vad_history[start_frame:end_frame].unsqueeze(0)
+            # ret["vad_history"] = vad_history[start_frame:end_frame].unsqueeze(0)
+            # vad history is always defined as speaker 0 activity
+            ret["vad_history"] = vad_history[start_frame:end_frame][..., 0].unsqueeze(0)
 
         ##############################################
         # VAD label
@@ -343,7 +350,7 @@ class DialogAudioDataset(Dataset):
             (self.vad_frame_pred, 2)
         )  # add horizon after end (silence)
         all_vad_frames = torch.cat((all_vad_frames, lookahead))
-        ret["vad_label"] = self.vad_codebook.vad_to_idx(
+        ret["vad_label"] = self.vad_codebook.vad_to_label_idx(
             all_vad_frames[start_frame + 1 : end_frame + self.vad_frame_pred]
         ).unsqueeze(0)
 
