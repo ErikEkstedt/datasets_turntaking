@@ -24,6 +24,10 @@ def time_to_frames(t, hop_time):
     return int(t / hop_time)
 
 
+def time_to_frames_samples(t, sample_rate, hop_length):
+    return int(t * sample_rate / hop_length)
+
+
 def time_to_samples(t, sample_rate):
     return int(t * sample_rate)
 

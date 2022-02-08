@@ -3,13 +3,15 @@ from os import walk
 from os.path import join, basename
 from copy import deepcopy
 
-from datasets_turntaking.features.vad import VAD, frame2time
 from datasets_turntaking.utils import (
     find_island_idx_len,
     read_json,
     read_txt,
     repo_root,
+    frames_to_time,
 )
+from vad_turn_taking import VAD
+
 
 REL_AUDIO_PATH = join(
     repo_root(), "datasets_turntaking/switchboard/files/relative_audio_path.json"
@@ -505,8 +507,8 @@ class Classification(TextFocusDialog):
         idx, dur, val = find_island_idx_len(states)
 
         # channel 0
-        starts1 = frame2time(idx[val == 0], frame_time)
-        dur1 = frame2time(dur[val == 0], frame_time)
+        starts1 = frames_to_time(idx[val == 0], frame_time)
+        dur1 = frames_to_time(dur[val == 0], frame_time)
         # not at start of dialog
         dur1 = dur1[starts1 > 3]
         starts1 = starts1[starts1 > 3]
@@ -518,8 +520,8 @@ class Classification(TextFocusDialog):
         hold_times.append(mid1)
 
         # channel 1
-        starts2 = frame2time(idx[val == 3], frame_time)
-        dur2 = frame2time(dur[val == 3], frame_time)
+        starts2 = frames_to_time(idx[val == 3], frame_time)
+        dur2 = frames_to_time(dur[val == 3], frame_time)
         # not at start of dialog
         dur2 = dur2[starts2 > 3]
         starts2 = starts2[starts2 > 3]

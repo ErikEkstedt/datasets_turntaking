@@ -11,8 +11,7 @@ from torch.nn.utils.rnn import pad_sequence
 import torch
 from torch.utils.data import DataLoader
 
-from datasets_turntaking.features.vad import time2frames
-from datasets_turntaking.utils import load_waveform
+from datasets_turntaking.utils import load_waveform, time_to_frames_samples
 from datasets_turntaking.speech import load_multiple_datasets
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/speech")
@@ -248,7 +247,7 @@ class SpeechAudioModule(pl.LightningDataModule):
             clip_duration = x.shape[-1] / self.sample_rate
 
             start_frame = 0
-            end_frame = time2frames(
+            end_frame = time_to_frames_samples(
                 clip_duration, self.sample_rate, self.f0_params["hop_length"]
             )
 
@@ -273,13 +272,13 @@ class SpeechAudioModule(pl.LightningDataModule):
 
             # frames
             if self.duration > 0:
-                start_frame = time2frames(
+                start_frame = time_to_frames_samples(
                     start_time, self.sample_rate, self.f0_params["hop_length"]
                 )
-                end_frame = time2frames(
+                end_frame = time_to_frames_samples(
                     end_time, self.sample_rate, self.f0_params["hop_length"]
                 )
-                # pred_end_frame = time2frames(
+                # pred_end_frame = time_to_frames_samples(
                 #     pred_end_time, self.sample_rate, self.f0_params["hop_length"]
                 # )
 

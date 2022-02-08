@@ -10,8 +10,9 @@ import torchaudio
 
 from torch.utils.data import DataLoader
 from datasets_turntaking.utils import repo_root, read_json
-from datasets_turntaking.features.vad import VAD
 from datasets_turntaking.features.f0 import pYAAPT
+
+from vad_turn_taking import VAD
 
 DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
 F0_MEAN_PATH = join(repo_root(), "datasets_turntaking/switchboard/f0_means.json")

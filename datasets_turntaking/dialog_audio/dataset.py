@@ -1,35 +1,13 @@
 import torch
 from torch.utils.data import Dataset
-from datasets_turntaking.features.vad import ProjectionCodebook, VAD
+
 from datasets_turntaking.utils import (
     load_waveform,
     get_audio_info,
     time_to_frames,
     find_island_idx_len,
 )
-
-
-def vad_list_to_onehot(vad_list, hop_time, duration, channel_last=False):
-    n_frames = time_to_frames(duration, hop_time) + 1
-    if isinstance(vad_list[0][0], list):
-        n_channels = len(vad_list)
-        vad_tensor = torch.zeros((n_channels, n_frames))
-        for ch, ch_vad in enumerate(vad_list):
-            for v in ch_vad:
-                s = time_to_frames(v[0], hop_time)
-                e = time_to_frames(v[1], hop_time)
-                vad_tensor[ch, s:e] = 1.0
-    else:
-        vad_tensor = torch.zeros((1, n_frames))
-        for v in vad_list:
-            s = time_to_frames(v[0], hop_time)
-            e = time_to_frames(v[1], hop_time)
-            vad_tensor[:, s:e] = 1.0
-
-    if channel_last:
-        vad_tensor = vad_tensor.permute(1, 0)
-
-    return vad_tensor
+from vad_turn_taking import VAD
 
 
 def get_ipu_ends(
@@ -112,7 +90,7 @@ def get_ipu_indices(
     map_to_start = []
     for i, (audio_path, vad) in enumerate(zip(dataset["audio_path"], dataset["vad"])):
         duration = get_audio_info(audio_path)["duration"]
-        vad_frames = vad_list_to_onehot(
+        vad_frames = VAD.vad_list_to_onehot(
             vad,
             hop_time=vad_hop_time,
             duration=duration,
@@ -206,16 +184,6 @@ class DialogAudioDataset(Dataset):
 
         # Vad prediction labels
         self.vad_frame_pred = sum(self.vad_bin_sizes)
-        # self.vad_codebook = VadProjectionOld(
-        #     n_bins=2 * len(self.vad_bin_sizes),
-        #     bin_sizes=self.vad_bin_sizes,
-        #     threshold_ratio=self.vad_threshold_ratio,
-        # )
-        self.vad_codebook = ProjectionCodebook(
-            bin_times=vad_bin_times,
-            frame_hz=vad_hz,
-            threshold_ratio=vad_threshold_ratio,
-        )
 
         # Vad history
         self.vad_history = vad_history
@@ -305,7 +273,7 @@ class DialogAudioDataset(Dataset):
         # for both speakers
         # duration of entire dialog
         duration = get_audio_info(b["audio_path"])["duration"]
-        all_vad_frames = vad_list_to_onehot(
+        all_vad_frames = VAD.vad_list_to_onehot(
             b["vad"],
             hop_time=self.vad_hop_time,
             duration=duration,
@@ -346,16 +314,20 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # VAD label
         ##############################################
-        lookahead = torch.zeros(
-            (self.vad_frame_pred, 2)
-        )  # add horizon after end (silence)
-        all_vad_frames = torch.cat((all_vad_frames, lookahead))
-        ret["vad_label"] = self.vad_codebook.vad_to_label_idx(
-            all_vad_frames[start_frame + 1 : end_frame + self.vad_frame_pred]
-        ).unsqueeze(0)
+        # time with vadlabel:   32 batch 5.027
+        # time without vadlabel: 32 batch 2.666
 
-        # only care about relevant part
-        ret["vad"] = all_vad_frames[start_frame:end_frame].unsqueeze(0)
+        ##############################################
+        # VAD
+        ##############################################
+        if end_frame + self.vad_frame_pred > all_vad_frames.shape[0]:
+            lookahead = torch.zeros(
+                (self.vad_frame_pred + 1, 2)
+            )  # add horizon after end (silence)
+            all_vad_frames = torch.cat((all_vad_frames, lookahead))
+        ret["vad"] = all_vad_frames[
+            start_frame : end_frame + self.vad_frame_pred
+        ].unsqueeze(0)
         return ret
 
     def __getitem__(self, idx):
@@ -383,6 +355,16 @@ if __name__ == "__main__":
     # dset = DialogAudioDataset(dataset=dset_hf, type='ipu', vad_history=True, vad_hz=50)
     print(dset)
     print("N: ", len(dset))
+
+    d = dset_hf[0]
+    end_time = 180
+    n = torch.tensor(d["dialog"]["end"])
+    n = n[n <= end_time]
+    n = len(n)
+    speaker = d["dialog"]["speaker"][:n]
+    text = d["dialog"]["text"][:n]
+    start = d["dialog"]["start"][:n]
+    end = d["dialog"]["end"][:n]
 
     idx = 299
     d = dset[idx]

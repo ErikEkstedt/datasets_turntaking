@@ -3,8 +3,8 @@ from datasets_turntaking.callhome import load_callhome
 
 if __name__ == "__main__":
     from datasets_turntaking.utils import load_waveform
-    from datasets_turntaking.features.vad import VAD
     from datasets_turntaking.features.plot_utils import plot_vad_list, plot_vad_oh
+    from vad_turn_taking import VAD
     import matplotlib.pyplot as plt
 
     dset = load_callhome("train")
