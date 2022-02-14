@@ -313,7 +313,7 @@ class DialogAudioDataset(Dataset):
         ##############################################
         if end_frame + self.vad_horizon > all_vad_frames.shape[0]:
             lookahead = torch.zeros(
-                (self.vad_vad_horizon + 1, 2)
+                (self.vad_horizon + 1, 2)
             )  # add horizon after end (silence)
             all_vad_frames = torch.cat((all_vad_frames, lookahead))
         ret["vad"] = all_vad_frames[

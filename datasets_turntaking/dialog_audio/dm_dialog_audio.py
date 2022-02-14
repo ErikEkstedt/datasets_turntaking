@@ -55,6 +55,7 @@ class DialogAudioDM(pl.LightningDataModule):
         vad_horizon=2,
         vad_history=False,
         vad_history_times=[60, 30, 10, 5],
+        flip_channels=True,
         batch_size=4,
         num_workers=0,
         pin_memory=True,
@@ -84,6 +85,7 @@ class DialogAudioDM(pl.LightningDataModule):
         self.vad_horizon = vad_horizon
         self.vad_history = vad_history
         self.vad_history_times = vad_history_times
+        self.flip_channels = flip_channels
 
         # DataLoder
         self.batch_size = batch_size
@@ -122,7 +124,7 @@ class DialogAudioDM(pl.LightningDataModule):
             vad_horizon=self.vad_horizon,
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
-            flip_channels=True,
+            flip_channels=self.flip_channels,
             flip_probability=0.5,
         )
 
