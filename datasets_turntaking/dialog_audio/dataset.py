@@ -146,8 +146,7 @@ class DialogAudioDataset(Dataset):
         audio_normalize=True,
         # VAD #################################
         vad_hz=100,
-        vad_bin_times=[0.2, 0.4, 0.6, 0.8],
-        vad_threshold_ratio=0.5,
+        vad_horizon=2,
         vad_history=False,
         vad_history_times=[60, 30, 10, 5],
         # Sliding #################################
@@ -176,14 +175,9 @@ class DialogAudioDataset(Dataset):
         # VAD parameters
         self.vad_hz = vad_hz
         self.vad_hop_time = 1.0 / vad_hz
-        self.vad_bin_times = vad_bin_times
-        self.vad_bin_sizes = [
-            time_to_frames(vt, hop_time=self.vad_hop_time) for vt in vad_bin_times
-        ]
-        self.vad_threshold_ratio = vad_threshold_ratio
 
         # Vad prediction labels
-        self.vad_frame_pred = sum(self.vad_bin_sizes)
+        self.vad_horizon = time_to_frames(vad_horizon, hop_time=self.vad_hop_time)
 
         # Vad history
         self.vad_history = vad_history
@@ -228,12 +222,9 @@ class DialogAudioDataset(Dataset):
         # VAD parameters
         s += f"\n\tvad_hz: {self.vad_hz}"
         s += f"\n\tvad_hop_time: {self.vad_hop_time}"
-        s += f"\n\tvad_bin_times: {self.vad_bin_times}"
-        s += f"\n\tvad_bin_sizes: {self.vad_bin_sizes}"
-        s += f"\n\tvad_threshold_ratio: {self.vad_threshold_ratio}"
 
         # Vad prediction labels
-        s += f"\n\tvad_frame_pred: {self.vad_frame_pred}"
+        s += f"\n\tvad_horizon: {self.vad_horizon}"
 
         # Vad history
         s += f"\n\tvad_history: {self.vad_history}"
@@ -320,13 +311,13 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # VAD
         ##############################################
-        if end_frame + self.vad_frame_pred > all_vad_frames.shape[0]:
+        if end_frame + self.vad_horizon > all_vad_frames.shape[0]:
             lookahead = torch.zeros(
-                (self.vad_frame_pred + 1, 2)
+                (self.vad_vad_horizon + 1, 2)
             )  # add horizon after end (silence)
             all_vad_frames = torch.cat((all_vad_frames, lookahead))
         ret["vad"] = all_vad_frames[
-            start_frame : end_frame + self.vad_frame_pred
+            start_frame : end_frame + self.vad_horizon
         ].unsqueeze(0)
         return ret
 

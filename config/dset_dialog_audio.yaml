@@ -13,7 +13,6 @@ dataset:
   ipu_pause_time: 0.2 # pause length must be longer than this to count
   # VAD
   vad_hz: 100
-  vad_bin_times: [.2, .4, .6, .8]
-  vad_threshold_ratio: 0.5
+  vad_horizon: 2
   vad_history: true
   vad_history_times: [60, 30, 10, 5]

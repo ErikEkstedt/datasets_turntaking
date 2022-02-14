@@ -52,8 +52,7 @@ class DialogAudioDM(pl.LightningDataModule):
         ipu_pause_time=0.2,
         sample_rate=16000,
         vad_hz=100,
-        vad_bin_times=[0.2, 0.4, 0.6, 0.8],
-        vad_threshold_ratio=0.5,
+        vad_horizon=2,
         vad_history=False,
         vad_history_times=[60, 30, 10, 5],
         batch_size=4,
@@ -82,8 +81,7 @@ class DialogAudioDM(pl.LightningDataModule):
 
         # VAD
         self.vad_hz = vad_hz
-        self.vad_bin_times = vad_bin_times
-        self.vad_threshold_ratio = vad_threshold_ratio
+        self.vad_horizon = vad_horizon
         self.vad_history = vad_history
         self.vad_history_times = vad_history_times
 
@@ -121,8 +119,7 @@ class DialogAudioDM(pl.LightningDataModule):
             audio_normalize=self.audio_normalize,
             sample_rate=self.sample_rate,
             vad_hz=self.vad_hz,
-            vad_bin_times=self.vad_bin_times,
-            vad_threshold_ratio=self.vad_threshold_ratio,
+            vad_horizon=self.vad_horizon,
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
             flip_channels=True,
@@ -275,11 +272,8 @@ if __name__ == "__main__":
         audio_duration=data_conf["dataset"]["audio_duration"],
         audio_normalize=data_conf["dataset"]["audio_normalize"],
         audio_overlap=data_conf["dataset"]["audio_overlap"],
-        # audio_context_duration=data_conf["dataset"]["audio_context_duration"],
-        # ipu_min_time=data_conf["dataset"]["ipu_min_time"],
-        # ipu_pause_time=data_conf["dataset"]["ipu_pause_time"],
         vad_hz=data_conf["dataset"]["vad_hz"],
-        vad_bin_times=data_conf["dataset"]["vad_bin_times"],
+        vad_horizon=data_conf["dataset"]["vad_horizon"],
         vad_history=data_conf["dataset"]["vad_history"],
         vad_history_times=data_conf["dataset"]["vad_history_times"],
         batch_size=16,
