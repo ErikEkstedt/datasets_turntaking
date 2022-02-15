@@ -110,7 +110,13 @@ class DialogAudioDM(pl.LightningDataModule):
                 split=split,
             )
 
-    def _dataset(self, dset):
+    def _dataset(self, dset, split="train"):
+        # Only flip during training...
+        if split == "train":
+            flip = self.flip_channels
+        else:
+            flip = False
+
         return DialogAudioDataset(
             dataset=dset,
             feature_extractor=None,
@@ -124,7 +130,7 @@ class DialogAudioDM(pl.LightningDataModule):
             vad_horizon=self.vad_horizon,
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
-            flip_channels=self.flip_channels,
+            flip_channels=flip,
             flip_probability=0.5,
         )
 
@@ -134,16 +140,16 @@ class DialogAudioDM(pl.LightningDataModule):
             test_hf_dataset = get_dialog_audio_datasets(
                 datasets=self.datasets, split="test"
             )
-            self.test_dset = self._dataset(test_hf_dataset)
+            self.test_dset = self._dataset(test_hf_dataset, split="test")
         else:  # if stage == "fit" or stage is None:
             train_hf_dataset = get_dialog_audio_datasets(
                 datasets=self.datasets, split="train"
             )
-            self.train_dset = self._dataset(train_hf_dataset)
+            self.train_dset = self._dataset(train_hf_dataset, split="train")
             val_hf_dataset = get_dialog_audio_datasets(
                 datasets=self.datasets, split="val"
             )
-            self.val_dset = self._dataset(val_hf_dataset)
+            self.val_dset = self._dataset(val_hf_dataset, split="val")
 
     def collate_fn(self, batch):
         waveforms = []
