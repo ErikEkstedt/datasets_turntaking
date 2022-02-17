@@ -136,12 +136,8 @@ class DialogAudioDM(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = "fit"):
         """Loads the datasets"""
-        if stage == "test":
-            test_hf_dataset = get_dialog_audio_datasets(
-                datasets=self.datasets, split="test"
-            )
-            self.test_dset = self._dataset(test_hf_dataset, split="test")
-        else:  # if stage == "fit" or stage is None:
+
+        if stage in (None, "fit"):
             train_hf_dataset = get_dialog_audio_datasets(
                 datasets=self.datasets, split="train"
             )
@@ -150,6 +146,12 @@ class DialogAudioDM(pl.LightningDataModule):
                 datasets=self.datasets, split="val"
             )
             self.val_dset = self._dataset(val_hf_dataset, split="val")
+
+        if stage in (None, "test"):
+            test_hf_dataset = get_dialog_audio_datasets(
+                datasets=self.datasets, split="test"
+            )
+            self.test_dset = self._dataset(test_hf_dataset, split="test")
 
     def collate_fn(self, batch):
         waveforms = []
