@@ -313,10 +313,23 @@ features_classification = {
 
 # TODO: Rewrite with `data_dir` flag like callhome
 class SwitchboardConfig(datasets.BuilderConfig):
-    def __init__(self, custom_overwrite=False, omit_post_words=False, **kwargs):
+    def __init__(
+        self,
+        custom_overwrite=False,
+        omit_post_words=False,
+        train_files=None,
+        val_files=None,
+        test_files=None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.custom_overwrite = custom_overwrite
         self.omit_post_words = omit_post_words
+
+        #
+        self.train_files = train_files
+        self.val_files = val_files
+        self.test_files = test_files
 
 
 class SwitchboardIPUConfig(datasets.BuilderConfig):
@@ -327,6 +340,9 @@ class SwitchboardIPUConfig(datasets.BuilderConfig):
         lookahead_duration=2,
         custom_overwrite=False,
         omit_post_words=False,
+        train_files=None,
+        val_files=None,
+        test_files=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -335,6 +351,10 @@ class SwitchboardIPUConfig(datasets.BuilderConfig):
         self.min_context_ipu_time = min_context_ipu_time
         self.ipu_threshold = ipu_threshold
         self.lookahead_duration = lookahead_duration
+
+        self.train_files = train_files
+        self.val_files = val_files
+        self.test_files = test_files
 
 
 class Switchboard(datasets.GeneratorBasedBuilder):
@@ -352,6 +372,9 @@ class Switchboard(datasets.GeneratorBasedBuilder):
         SwitchboardConfig(
             name="clean",
             description="Switcboard dataset like raw but processing of text (omit special annotation text)",
+            train_files=None,
+            val_files=None,
+            test_files=None,
         ),
         SwitchboardConfig(
             name="classification",
@@ -462,9 +485,20 @@ class Switchboard(datasets.GeneratorBasedBuilder):
         return ipus.generate_ipus(filepaths)
 
     def get_splits(self, processed_files):
-        train_files = read_txt(os.path.join(SPLIT_ROOT, "train.txt"))
-        val_files = read_txt(os.path.join(SPLIT_ROOT, "val.txt"))
-        test_files = read_txt(os.path.join(SPLIT_ROOT, "test.txt"))
+        if self.config.train_files is None:
+            train_files = read_txt(os.path.join(SPLIT_ROOT, "train.txt"))
+        else:
+            train_files = read_txt(self.config.train_files)
+
+        if self.config.val_files is None:
+            val_files = read_txt(os.path.join(SPLIT_ROOT, "val.txt"))
+        else:
+            val_files = read_txt(self.config.val_files)
+
+        if self.config.test_files is None:
+            test_files = read_txt(os.path.join(SPLIT_ROOT, "test.txt"))
+        else:
+            test_files = read_txt(self.config.test_files)
 
         train, val, test = [], [], []
         for f in processed_files:

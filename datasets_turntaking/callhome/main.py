@@ -4,7 +4,7 @@ from datasets_turntaking.callhome import load_callhome
 if __name__ == "__main__":
     from datasets_turntaking.utils import load_waveform
     from datasets_turntaking.features.plot_utils import plot_vad_list, plot_vad_oh
-    from vad_turn_taking import VAD
+    from vap_turn_taking.utils import vad_list_to_onehot
     import matplotlib.pyplot as plt
 
     dset = load_callhome("train")
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     print("duration: ", round(duration, 2))
     print("sample_rate: ", sr)
 
-    vad_frames = VAD.vad_list_to_onehot(
+    vad_frames = vad_list_to_onehot(
         d["vad"],
         sample_rate=sr,
         hop_length=80,

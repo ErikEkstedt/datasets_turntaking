@@ -108,6 +108,16 @@ def read_json(path, encoding="utf8"):
     return data
 
 
+def write_txt(txt, name):
+    """
+    Argument:
+        txt:    list of strings
+        name:   filename
+    """
+    with open(name, "w") as f:
+        f.write("\n".join(txt))
+
+
 def read_txt(path, encoding="utf-8"):
     data = []
     with open(path, "r", encoding=encoding) as f:

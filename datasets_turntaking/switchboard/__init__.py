@@ -8,7 +8,14 @@ AUDIO_DIR = join(expanduser("~"), "projects/data/switchboard/audio")
 EXT = ".wav"
 
 
-def load_switchboard(split="train", audio_root=AUDIO_DIR, ext=EXT):
+def load_switchboard(
+    split="train",
+    audio_root=AUDIO_DIR,
+    ext=EXT,
+    train_files=None,
+    val_files=None,
+    test_files=None,
+):
     if split == "val":
         split = "validation"
 
@@ -19,7 +26,14 @@ def load_switchboard(split="train", audio_root=AUDIO_DIR, ext=EXT):
 
         return examples
 
-    dset = load_dataset(DATASET_SCRIPT, name="clean", split=split)
+    dset = load_dataset(
+        DATASET_SCRIPT,
+        name="clean",
+        split=split,
+        train_files=train_files,
+        val_files=val_files,
+        test_files=test_files,
+    )
     # dset = dset.remove_columns(["speaker_id", "chapter_id"])
     dset = dset.map(process_and_add_name)
     return dset

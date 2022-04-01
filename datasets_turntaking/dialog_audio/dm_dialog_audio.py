@@ -20,7 +20,9 @@ from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
 
 
-def get_dialog_audio_datasets(datasets, split):
+def get_dialog_audio_datasets(
+    datasets, split, train_files=None, val_files=None, test_files=None
+):
     """
     Load multiple dataset (of Huggingface `datasets` type) and concatenate to
     a single dataset.
@@ -28,7 +30,14 @@ def get_dialog_audio_datasets(datasets, split):
     dsets = []
     for d in datasets:
         if d == "switchboard":
-            dsets.append(load_switchboard(split))
+            dsets.append(
+                load_switchboard(
+                    split=split,
+                    train_files=train_files,
+                    val_files=val_files,
+                    test_files=test_files,
+                )
+            )
         elif d == "callhome":
             dsets.append(load_callhome(split))
         else:
@@ -56,6 +65,9 @@ class DialogAudioDM(pl.LightningDataModule):
         vad_history=False,
         vad_history_times=[60, 30, 10, 5],
         flip_channels=True,
+        train_files=None,
+        val_files=None,
+        test_files=None,
         batch_size=4,
         num_workers=0,
         pin_memory=True,
@@ -86,6 +98,11 @@ class DialogAudioDM(pl.LightningDataModule):
         self.vad_history = vad_history
         self.vad_history_times = vad_history_times
         self.flip_channels = flip_channels
+
+        # Dataset Files
+        self.train_files = train_files
+        self.val_files = val_files
+        self.test_files = test_files
 
         # DataLoder
         self.batch_size = batch_size
@@ -139,17 +156,29 @@ class DialogAudioDM(pl.LightningDataModule):
 
         if stage in (None, "fit"):
             train_hf_dataset = get_dialog_audio_datasets(
-                datasets=self.datasets, split="train"
+                datasets=self.datasets,
+                split="train",
+                train_files=self.train_files,
+                val_files=self.val_files,
+                test_files=self.test_files,
             )
             self.train_dset = self._dataset(train_hf_dataset, split="train")
             val_hf_dataset = get_dialog_audio_datasets(
-                datasets=self.datasets, split="val"
+                datasets=self.datasets,
+                split="val",
+                train_files=self.train_files,
+                val_files=self.val_files,
+                test_files=self.test_files,
             )
             self.val_dset = self._dataset(val_hf_dataset, split="val")
 
         if stage in (None, "test"):
             test_hf_dataset = get_dialog_audio_datasets(
-                datasets=self.datasets, split="test"
+                datasets=self.datasets,
+                split="test",
+                train_files=self.train_files,
+                val_files=self.val_files,
+                test_files=self.test_files,
             )
             self.test_dset = self._dataset(test_hf_dataset, split="test")
 
@@ -262,6 +291,9 @@ class DialogAudioDM(pl.LightningDataModule):
         parser.add_argument("--data_conf", default=None, type=str)
         parser.add_argument("--batch_size", default=4, type=int)
         parser.add_argument("--num_workers", default=cpu_count(), type=int)
+        parser.add_argument("--train_files", default=None, type=str)
+        parser.add_argument("--val_files", default=None, type=str)
+        parser.add_argument("--test_files", default=None, type=str)
 
         # A workaround for OmegaConf + WandB-Sweeps
         conf = DialogAudioDM.load_config()
@@ -271,8 +303,16 @@ class DialogAudioDM(pl.LightningDataModule):
 
 if __name__ == "__main__":
 
+    from os.path import join
+
     data_conf = DialogAudioDM.load_config()
     DialogAudioDM.print_dm(data_conf)
+
+    # folds = "/home/erik/projects/conv_ssl/conv_ssl/config/swb_kfolds"
+    # train_files = join(folds, "1_fold_train.txt")
+    # val_files = join(folds, "1_fold_val.txt")
+    train_files = None
+    val_files = None
 
     data_conf["dataset"]["vad_hz"] = 100
     dm = DialogAudioDM(
@@ -286,6 +326,8 @@ if __name__ == "__main__":
         vad_horizon=data_conf["dataset"]["vad_horizon"],
         vad_history=data_conf["dataset"]["vad_history"],
         vad_history_times=data_conf["dataset"]["vad_history_times"],
+        train_files=train_files,
+        val_files=val_files,
         batch_size=16,
         num_workers=0,
     )
