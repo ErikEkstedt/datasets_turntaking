@@ -85,12 +85,12 @@ class OpenSmile:
         )
 
         # pad
-        print("f: ", tuple(f.shape))
-        pre_pad = f[0].repeat(self.pad_frames, 1)
-        print("pre_pad: ", tuple(pre_pad.shape))
-        post_pad = f[-1].repeat(self.pad_frames, 1)
-        print("post_pad: ", tuple(post_pad.shape))
-        f = torch.cat((pre_pad, f, post_pad))
+        # print("f: ", tuple(f.shape))
+        # pre_pad = f[0].repeat(self.pad_frames, 1)
+        # print("pre_pad: ", tuple(pre_pad.shape))
+        # post_pad = f[-1].repeat(self.pad_frames, 1)
+        # print("post_pad: ", tuple(post_pad.shape))
+        # f = torch.cat((pre_pad, f, post_pad))
 
         if self.normalize:
             fr = z_norm(f[..., self.idx_reg])
@@ -172,9 +172,27 @@ def debug():
 
 if __name__ == "__main__":
     from tqdm import tqdm
-    from datasets_turntaking.dm_dialog_audio import quick_load_dm
 
-    dm = quick_load_dm()
+    from datasets_turntaking import DialogAudioDM
+
+    data_conf = DialogAudioDM.load_config()
+    dm = DialogAudioDM(
+        datasets=data_conf["dataset"]["datasets"],
+        type=data_conf["dataset"]["type"],
+        audio_duration=data_conf["dataset"]["audio_duration"],
+        audio_normalize=data_conf["dataset"]["audio_normalize"],
+        audio_overlap=data_conf["dataset"]["audio_overlap"],
+        sample_rate=data_conf["dataset"]["sample_rate"],
+        vad_hz=100,
+        vad_bin_times=data_conf["dataset"]["vad_bin_times"],
+        vad_history=data_conf["dataset"]["vad_history"],
+        vad_history_times=data_conf["dataset"]["vad_history_times"],
+        batch_size=4,
+        num_workers=0,
+    )
+    dm.prepare_data()
+    dm.setup()
+
     diter = iter(dm.val_dataloader())
     batch = next(diter)
 
@@ -184,10 +202,12 @@ if __name__ == "__main__":
 
     ###################################################################
 
-    smile = OpenSmile("emobase")
+    smile = OpenSmile(normalize=True)
 
-    x = torch.cat((waveform, waveform)).permute(1, 0)
+    x = batch["waveform"][0]
+    print("x: ", tuple(x.shape))
     a = smile.smile.process_signal(x, sample_rate).to_numpy()
+    print("a: ", tuple(a.shape))
 
     # 12 - 62 for 10,000 samples (less individual dialogs)
     f0_min = 999
