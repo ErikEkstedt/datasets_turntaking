@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from datasets_turntaking.utils import repo_root, read_json
 from datasets_turntaking.features.f0 import pYAAPT
 
-from vad_turn_taking import VAD
+from vap_turn_taking.utils import get_vad_condensed_history, get_current_vad_onehot
 
 DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
 F0_MEAN_PATH = join(repo_root(), "datasets_turntaking/switchboard/f0_means.json")
@@ -306,7 +306,7 @@ class ClassificationDataModule(pl.LightningDataModule):
 
             if "vad" in self.features:
                 # Vad for the current features
-                vad = VAD.get_current_vad_onehot(
+                vad = get_current_vad_onehot(
                     b["context.vad"],
                     end=b["response.start"] + self.lookahead_time,
                     speaker=b["context.speaker"],
@@ -317,7 +317,7 @@ class ClassificationDataModule(pl.LightningDataModule):
 
             if "vad_history" in self.features:
                 # history up until the current features arrive
-                vad_hist = VAD.get_vad_condensed_history(
+                vad_hist = get_vad_condensed_history(
                     b["context.vad"],
                     b["response.start"] - self.audio_duration,
                     b["context.speaker"],

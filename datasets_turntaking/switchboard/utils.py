@@ -10,8 +10,12 @@ from datasets_turntaking.utils import (
     repo_root,
     frames_to_time,
 )
-from vad_turn_taking import VAD
 
+from vap_turn_taking.utils import (
+    vad_list_to_onehot,
+    get_current_vad_onehot,
+    vad_to_dialog_vad_states,
+)
 
 REL_AUDIO_PATH = join(
     repo_root(), "datasets_turntaking/switchboard/files/relative_audio_path.json"
@@ -500,10 +504,10 @@ class Classification(TextFocusDialog):
         # extract longer time segments with only one speaker
         hold_times = []
         frame_time = 0.1
-        vad_oh = VAD.get_current_vad_onehot(
+        vad_oh = get_current_vad_onehot(
             vad, end=end, duration=end, speaker=0, frame_size=frame_time
         )
-        states = VAD.vad_to_dialog_vad_states(vad_oh)
+        states = vad_to_dialog_vad_states(vad_oh)
         idx, dur, val = find_island_idx_len(states)
 
         # channel 0
@@ -885,7 +889,7 @@ class Debuggin:
 
         d = samples[i][1]
         vad = d["context"]["vad"]
-        vad_oh = VAD.vad_list_to_onehot(
+        vad_oh = vad_list_to_onehot(
             vad, sample_rate=8000, hop_length=0.02, duration=pred_end_time
         )
         target_time = d["response"]["start"]
@@ -900,7 +904,6 @@ class Debuggin:
         import matplotlib.pyplot as plt
         from datasets_turntaking.utils import load_waveform
         from datasets_turntaking.features.plot_utils import plot_vad_list
-        from datasets_turntaking.features.vad import VAD
 
         audio_root = join(expanduser("~"), "projects/data/switchboard/audio")
         ipuer = SegmentIPU(lookahead_duration=3, backchannel_list=BACKCHANNELS)
@@ -944,7 +947,7 @@ class Debuggin:
         print("LABEL: ", sample["label"])
         print("context: ", sample["context"]["text"])
         end_time = sample["context"]["end"] + ipuer.lookahead_duration
-        vad = VAD.vad_list_to_onehot(
+        vad = vad_list_to_onehot(
             sample["context"]["vad"],
             sample_rate=8000,
             hop_length=0.05,
@@ -965,7 +968,6 @@ class Debuggin:
 if __name__ == "__main__":
 
     from os.path import expanduser
-    from datasets_turntaking.features.vad import VAD
     from datasets_turntaking.features.plot_utils import plot_vad_list
 
     # for filepath in filepaths:

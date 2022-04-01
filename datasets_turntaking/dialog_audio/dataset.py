@@ -7,7 +7,8 @@ from datasets_turntaking.utils import (
     time_to_frames,
     find_island_idx_len,
 )
-from vad_turn_taking import VAD
+
+from vap_turn_taking.utils import vad_list_to_onehot, get_activity_history
 
 
 def get_ipu_ends(
@@ -90,7 +91,7 @@ def get_ipu_indices(
     map_to_start = []
     for i, (audio_path, vad) in enumerate(zip(dataset["audio_path"], dataset["vad"])):
         duration = get_audio_info(audio_path)["duration"]
-        vad_frames = VAD.vad_list_to_onehot(
+        vad_frames = vad_list_to_onehot(
             vad,
             hop_time=vad_hop_time,
             duration=duration,
@@ -264,7 +265,7 @@ class DialogAudioDataset(Dataset):
         # for both speakers
         # duration of entire dialog
         duration = get_audio_info(b["audio_path"])["duration"]
-        all_vad_frames = VAD.vad_list_to_onehot(
+        all_vad_frames = vad_list_to_onehot(
             b["vad"],
             hop_time=self.vad_hop_time,
             duration=duration,
@@ -293,7 +294,7 @@ class DialogAudioDataset(Dataset):
         ##############################################
         if self.vad_history:
             # history up until the current features arrive
-            vad_history, _ = VAD.get_activity_history(
+            vad_history, _ = get_activity_history(
                 all_vad_frames,
                 bin_end_frames=self.vad_history_frames,
                 channel_last=True,
