@@ -1,6 +1,5 @@
 import torch
 from torch.utils.data import Dataset
-
 from datasets_turntaking.utils import (
     load_waveform,
     get_audio_info,
@@ -178,6 +177,7 @@ class DialogAudioDataset(Dataset):
         self.vad_hop_time = 1.0 / vad_hz
 
         # Vad prediction labels
+        self.horizon_time = vad_horizon
         self.vad_horizon = time_to_frames(vad_horizon, hop_time=self.vad_hop_time)
 
         # Vad history
@@ -240,6 +240,129 @@ class DialogAudioDataset(Dataset):
 
     def __len__(self):
         return len(self.map_to_dset_idx)
+
+    def get_dialog_sample(self, idx):
+        d = self.dataset[idx]
+        return self.get_full_sample(d)
+
+    def get_full_sample(self, b):
+        """Get the sample from the dialog"""
+        # Loads the dialog waveform (stereo) and normalize/to-mono for each
+        # smaller segment in loop below
+        waveform, _ = load_waveform(
+            b["audio_path"],
+            sample_rate=self.sample_rate,
+            normalize=self.audio_normalize,
+            mono=self.audio_mono,
+        )
+
+        # TODO: extract relevant vad directly
+        # Extract Vad-frames based on a list of speaker activity
+        # channel_vad: [(start, end), (start,end), ...]
+        # [ch0_vad, ch1_vad]
+        # for both speakers
+        # duration of entire dialog
+        duration = get_audio_info(b["audio_path"])["duration"]
+        all_vad_frames = vad_list_to_onehot(
+            b["vad"],
+            hop_time=self.vad_hop_time,
+            duration=duration,
+            channel_last=True,
+        )
+
+        # dict to return
+        ret = {
+            "waveform": waveform,
+            "dataset_name": [b["dataset_name"]],
+            "session": [b["session"]],
+        }
+
+        if self.feature_extractor is not None:
+            ret["features"] = self.feature_extractor(waveform)
+
+        ##############################################
+        # History
+        ##############################################
+        if self.vad_history:
+            # history up until the current features arrive
+            vh, _ = get_activity_history(
+                all_vad_frames,
+                bin_end_frames=self.vad_history_frames,
+                channel_last=True,
+            )
+            # We define the history as the ratio of speaker A (=0)
+            ret["vad_history"] = vh[..., 0].unsqueeze(0)
+
+        ##############################################
+        # VAD label
+        ##############################################
+        # time with vadlabel:   32 batch 5.027
+        # time without vadlabel: 32 batch 2.666
+
+        ##############################################
+        # VAD
+        ##############################################
+        # add "silent" lookahead
+        # add horizon after end (silence)
+        lookahead = torch.zeros((self.vad_horizon, 2))
+        ret["vad"] = torch.cat((all_vad_frames, lookahead)).unsqueeze(0)
+        return ret
+
+    def dialog_to_batch(self, d, audio_overlap=5, audio_duration=10, batch_size=16):
+        step = audio_duration - audio_overlap
+
+        # waveform sizes
+        sample_size = int(self.sample_rate * audio_duration)
+        sample_step = int(self.sample_rate * step)
+
+        # VA sizes
+        vh_size = int(self.vad_hz * audio_duration)
+        vf_size = int(self.vad_hz * (audio_duration + self.horizon_time))
+        v_step = int(self.vad_hz * step)
+
+        # we assume that all data contains a batch dimension
+        w = d["waveform"][0].unfold(dimension=0, size=sample_size, step=sample_step)
+        vf = d["vad"][0].unfold(dimension=0, size=vf_size, step=v_step).permute(0, 2, 1)
+        vh = (
+            d["vad_history"][0]
+            .unfold(dimension=0, size=vh_size, step=v_step)
+            .permute(0, 2, 1)
+        )
+        # print("w: ", tuple(w.shape))
+        # print("vf: ", tuple(vf.shape))  # may be one extra step
+        # print("vh: ", tuple(vh.shape))
+
+        assert (
+            w.shape[0] == vf.shape[0]
+        ), f"w != vf | {w.shape} != {vf.shape} -> Not the same number of samples"
+        assert (
+            vf.shape[0] == vh.shape[0]
+        ), f"vf != vh | {vf.shape} != {vh.shape} -> Not the same number of samples"
+
+        n_samples = w.shape[0]
+        if n_samples <= batch_size:
+            batch = {"waveform": w, "vad": vf, "vad_history": vh}
+            batches = [batch]
+            return batches
+
+        # split into batches of appropriate sizes
+
+        n_batch_samples = 0
+        batches = []
+        for s in range(0, n_samples, batch_size):
+            e = s + batch_size
+            vf_tmp = vf[s:e]
+            n_batch_samples += vf_tmp.shape[0]
+            batches.append(
+                {
+                    "waveform": w[s:e],
+                    "vad": vf_tmp,
+                    "vad_history": vh[s:e],
+                }
+            )
+        assert n_batch_samples == n_samples, "Did not get  all samples"
+
+        return batches
 
     def get_sample(self, b, start_time, end_time):
         """Get the sample from the dialog"""
