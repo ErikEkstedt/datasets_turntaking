@@ -53,7 +53,7 @@ class FisherConfig(datasets.BuilderConfig):
         train_ids=[str(i) for i in range(1, 5100)],
         val_ids=[str(i) for i in range(5100, 5500)],
         test_ids=[str(i) for i in range(5500, TOTAL_FILES + 1)],
-        ext=".sph",
+        ext=".wav",
         **kwargs,
     ):
         super().__init__(**kwargs)

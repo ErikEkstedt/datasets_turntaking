@@ -34,5 +34,8 @@ def load_fisher(
 
 if __name__ == "__main__":
 
+    from datasets_turntaking.utils import load_waveform
+
     dset = load_dataset(DATASET_SCRIPT, name="default", split="train")
     d = dset[0]
+    x, sr = load_waveform(d["audio_path"])
