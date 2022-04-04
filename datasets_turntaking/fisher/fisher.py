@@ -53,10 +53,12 @@ class FisherConfig(datasets.BuilderConfig):
         train_ids=[str(i) for i in range(1, 5100)],
         val_ids=[str(i) for i in range(5100, 5500)],
         test_ids=[str(i) for i in range(5500, TOTAL_FILES + 1)],
+        ext=".sph",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.root = root
+        self.ext = ext
         self.train_ids = train_ids
         self.val_ids = val_ids
         self.test_ids = test_ids
@@ -106,7 +108,9 @@ class Fisher(datasets.GeneratorBasedBuilder):
     def generate(self, all_nnns):
         for n in all_nnns:
             nnn = str(n).zfill(5)
-            trans_path, audio_path = get_paths(nnn, self.config.root)
+            trans_path, audio_path = get_paths(
+                nnn, self.config.root, ext=self.config.ext
+            )
             anno = load_transcript(trans_path)
             vad = extract_vad_list(anno)
             yield f"{nnn}", {

@@ -2,11 +2,11 @@ from os.path import join
 from datasets_turntaking.utils import read_txt
 
 
-def get_audio_path(nnn, root):
+def get_audio_path(nnn, root, ext=".sph"):
     n = int(nnn)
     dir = nnn[:3]
     d = int(n / 900 + 1)
-    return join(root, f"fisher_eng_tr_sp_d{d}/audio/{dir}/fe_03_{nnn}.sph")
+    return join(root, f"fisher_eng_tr_sp_d{d}/audio/{dir}/fe_03_{nnn}{ext}")
 
 
 def get_transcript_path(nnn, root):
@@ -14,8 +14,8 @@ def get_transcript_path(nnn, root):
     return join(root, "fe_03_p1_tran/data/trans", f"{dir}/fe_03_{nnn}.txt")
 
 
-def get_paths(nnn, root):
-    audio_path = get_audio_path(nnn, root)
+def get_paths(nnn, root, ext=".sph"):
+    audio_path = get_audio_path(nnn, root, ext=ext)
     transcript = get_transcript_path(nnn, root)
     return transcript, audio_path
 
@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     root = "/home/erik/projects/data/Fisher"
     nnn = "00001"
-    trans_path, audio_path = get_paths(nnn, root)
+    trans_path, audio_path = get_paths(nnn, root, ext=".sph")
 
     anno = load_transcript(trans_path)
     # audio = load_waveform(audio_path) # can't load .sph with torchaudio
