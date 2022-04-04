@@ -1,4 +1,6 @@
 datasets
 omegaconf
+sphfile
+pytorch-lightning
 # librosa
 # AMFM-decompy
