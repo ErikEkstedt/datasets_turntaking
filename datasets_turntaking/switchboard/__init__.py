@@ -28,7 +28,7 @@ def load_switchboard(
 
     dset = load_dataset(
         DATASET_SCRIPT,
-        name="clean",
+        name="default",
         split=split,
         train_files=train_files,
         val_files=val_files,

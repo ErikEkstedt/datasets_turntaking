@@ -464,7 +464,9 @@ if __name__ == "__main__":
     # from tqdm import tqdm
 
     # dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
-    dset_hf = get_dialog_audio_datasets(datasets=["fisher"], split="val")
+    dset_hf = get_dialog_audio_datasets(
+        datasets=["fisher", "switchboard"], split="train"
+    )
 
     dset = DialogAudioDataset(
         dataset=dset_hf, type="sliding", vad_history=True, vad_hz=50

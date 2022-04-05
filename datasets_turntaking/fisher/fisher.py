@@ -43,18 +43,18 @@ class FisherConfig(datasets.BuilderConfig):
     def __init__(
         self,
         root,
-        train_ids=[str(i) for i in range(1, 5100)],
-        val_ids=[str(i) for i in range(5100, 5500)],
-        test_ids=[str(i) for i in range(5500, TOTAL_FILES + 1)],
+        train_sessions=[str(i) for i in range(1, 5100)],
+        val_sessions=[str(i) for i in range(5100, 5500)],
+        test_sessions=[str(i) for i in range(5500, TOTAL_FILES + 1)],
         ext=".wav",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.root = root
         self.ext = ext
-        self.train_ids = train_ids
-        self.val_ids = val_ids
-        self.test_ids = test_ids
+        self.train_sessions = train_sessions
+        self.val_sessions = val_sessions
+        self.test_sessions = test_sessions
 
 
 class Fisher(datasets.GeneratorBasedBuilder):
@@ -81,33 +81,33 @@ class Fisher(datasets.GeneratorBasedBuilder):
         return [
             datasets.SplitGenerator(
                 name=datasets.Split.TRAIN,
-                gen_kwargs={"ids": self.config.train_ids},
+                gen_kwargs={"sessions": self.config.train_sessions},
             ),
             datasets.SplitGenerator(
                 name=datasets.Split.VALIDATION,
-                gen_kwargs={"ids": self.config.val_ids},
+                gen_kwargs={"sessions": self.config.val_sessions},
             ),
             datasets.SplitGenerator(
                 name=datasets.Split.TEST,
-                gen_kwargs={"ids": self.config.test_ids},
+                gen_kwargs={"sessions": self.config.test_sessions},
             ),
         ]
 
-    def generate(self, all_nnns):
-        for n in all_nnns:
-            nnn = str(n).zfill(5)
+    def generate(self, sessions):
+        for n in sessions:
+            session = str(n).zfill(5)
             trans_path, audio_path = get_paths(
-                nnn, self.config.root, ext=self.config.ext
+                session, self.config.root, ext=self.config.ext
             )
             anno = load_transcript(trans_path)
             vad = extract_vad_list(anno)
-            yield f"{nnn}", {
-                "session": nnn,
+            yield f"{session}", {
+                "session": session,
                 "audio_path": audio_path,
                 "vad": vad,
                 "dialog": anno,
             }
 
-    def _generate_examples(self, ids):
-        logger.info("generating examples from = %s", ids)
-        return self.generate(ids)
+    def _generate_examples(self, sessions):
+        logger.info("generating examples from = %s", sessions)
+        return self.generate(sessions)

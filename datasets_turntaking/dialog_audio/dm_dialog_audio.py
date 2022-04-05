@@ -319,7 +319,7 @@ if __name__ == "__main__":
 
     data_conf["dataset"]["vad_hz"] = 100
     dm = DialogAudioDM(
-        datasets=data_conf["dataset"]["datasets"],
+        datasets=["switchboard", "fisher"],
         type=data_conf["dataset"]["type"],
         sample_rate=data_conf["dataset"]["sample_rate"],
         audio_duration=data_conf["dataset"]["audio_duration"],
