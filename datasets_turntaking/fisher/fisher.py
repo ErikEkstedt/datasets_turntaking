@@ -27,22 +27,15 @@ FEATURES = {
     "vad": [
         [Sequence(Value("float"))],
     ],
-    "dialog": {
-        "A": Sequence(
+    "dialog": [
+        Sequence(
             {
                 "start": Value("float"),
                 "end": Value("float"),
                 "text": Value("string"),
             }
-        ),
-        "B": Sequence(
-            {
-                "start": Value("float"),
-                "end": Value("float"),
-                "text": Value("string"),
-            }
-        ),
-    },
+        )
+    ],
 }
 
 
@@ -62,11 +55,6 @@ class FisherConfig(datasets.BuilderConfig):
         self.train_ids = train_ids
         self.val_ids = val_ids
         self.test_ids = test_ids
-
-        # FULL
-        # self.test_ids = [str(i) for i in range(150, 200)]
-        # self.val_ids = [str(i) for i in range(100, 150)]
-        # self.train_ids = [str(i) for i in range(1, 100)]
 
 
 class Fisher(datasets.GeneratorBasedBuilder):

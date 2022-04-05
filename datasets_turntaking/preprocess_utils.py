@@ -1,4 +1,5 @@
 from os import remove
+import subprocess
 
 try:
     from sphfile import SPHFile
@@ -9,11 +10,15 @@ except ModuleNotFoundError as e:
     raise e
 
 
+def sph2pipe_to_wav(sph_file):
+    wav_file = sph_file.replace(".sph", ".wav")
+    subprocess.check_call(["sph2pipe", sph_file, wav_file])
+    return wav_file
+
+
 def sph_to_wav(filepath):
-    wavpath = filepath.replace(".sph", ".wav")
     sph = SPHFile(filepath)
-    # write out a wav file with content from 111.29 to 123.57 seconds
-    # sph.write_wav(wavpath, start=111.29, end=123.57)
+    wavpath = filepath.replace(".sph", ".wav")
     return sph.write_wav(wavpath, start=None, stop=None)
 
 

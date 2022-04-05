@@ -37,3 +37,16 @@ Root/
     ├── filetable.txt
     └── volume_id.txt
 ```
+
+## Preprocess
+
+The audio files requires preprocessing (`.sph`-> `.wav`).
+
+* Download [sph2pipe_v2.5](https://www.ldc.upenn.edu/language-resources/tools/sphere-conversion-tools)
+  - Extract: `tar -xf sph2pipe_v2.5.tar.gz`
+  - CD into folder
+  - Compile: `gcc -o sph2pipe *.c -lm` 
+    - creates `sph2pipe`
+  - Then make sure that the file is located somewhere in your `$PATH` so that it can be used by python
+* Run: `python datasets_turntaking/fisher/preprocess --root $PATH_TO_FISHER_DIR`
+  - This will convert sph to wav (same filename different ext) and delete the original sph files.

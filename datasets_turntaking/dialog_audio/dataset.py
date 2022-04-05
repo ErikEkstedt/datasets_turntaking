@@ -458,11 +458,13 @@ if __name__ == "__main__":
     from datasets_turntaking.dialog_audio.dm_dialog_audio import (
         get_dialog_audio_datasets,
     )
-    from datasets_turntaking.features.plot_utils import plot_vad_sample
-    import sounddevice as sd
-    from tqdm import tqdm
 
-    dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
+    # from datasets_turntaking.features.plot_utils import plot_vad_sample
+    # import sounddevice as sd
+    # from tqdm import tqdm
+
+    # dset_hf = get_dialog_audio_datasets(datasets=["switchboard"], split="val")
+    dset_hf = get_dialog_audio_datasets(datasets=["fisher"], split="val")
 
     dset = DialogAudioDataset(
         dataset=dset_hf, type="sliding", vad_history=True, vad_hz=50
@@ -470,6 +472,13 @@ if __name__ == "__main__":
     # dset = DialogAudioDataset(dataset=dset_hf, type='ipu', vad_history=True, vad_hz=50)
     print(dset)
     print("N: ", len(dset))
+
+    batch = dset[100]
+    for k, v in batch.items():
+        if isinstance(v, torch.Tensor):
+            print(f"{k}: {tuple(v.shape)}")
+        else:
+            print(f"{k}: {v}")
 
     d = dset_hf[0]
     end_time = 180
@@ -489,15 +498,15 @@ if __name__ == "__main__":
         else:
             print(f"{k}: {v}")
 
-    fig, ax = plot_vad_sample(
-        waveform=d["waveform"][0],
-        vad=d["vad"][0].t(),
-        vad_labels=d["vad_label"][0],
-        vad_current_frame=None,
-        vad_bins=256,
-        sample_rate=dset.sample_rate,
-        ax=None,
-        figsize=(16, 5),
-        plot=True,
-    )
-    sd.play(d["waveform"][0], samplerate=dset.sample_rate)
+    # fig, ax = plot_vad_sample(
+    #     waveform=d["waveform"][0],
+    #     vad=d["vad"][0].t(),
+    #     vad_labels=d["vad_label"][0],
+    #     vad_current_frame=None,
+    #     vad_bins=256,
+    #     sample_rate=dset.sample_rate,
+    #     ax=None,
+    #     figsize=(16, 5),
+    #     plot=True,
+    # )
+    # sd.play(d["waveform"][0], samplerate=dset.sample_rate)
