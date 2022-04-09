@@ -153,5 +153,5 @@ class Swithchboard(datasets.GeneratorBasedBuilder):
             }
 
     def _generate_examples(self, sessions):
-        logger.info("generating examples from = %s", sessions)
+        # logger.info("generating examples from = %s", sessions)
         return self.generate(sessions)
