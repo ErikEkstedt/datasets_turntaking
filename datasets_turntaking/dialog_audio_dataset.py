@@ -145,6 +145,7 @@ class DialogAudioDataset(Dataset):
         audio_duration=10,
         audio_normalize=True,
         # VAD #################################
+        vad=True,
         vad_hz=100,
         vad_horizon=2,
         vad_history=False,
@@ -173,6 +174,7 @@ class DialogAudioDataset(Dataset):
         self.audio_normalize_threshold = 0.05
 
         # VAD parameters
+        self.vad = vad  # use vad or not
         self.vad_hz = vad_hz
         self.vad_hop_time = 1.0 / vad_hz
 
@@ -196,19 +198,25 @@ class DialogAudioDataset(Dataset):
         self.flip_channels = flip_channels
         self.flip_probability = flip_probability
 
+        self.map_to_dset_idx, self.map_to_start_time = self.get_sample_maps(type)
+
+
+    def get_sample_maps(self, type='sliding'):
         if type == "ipu":
-            self.map_to_dset_idx, self.map_to_start_time = get_ipu_indices(
-                dataset,
-                clip_duration=audio_duration,
+            map_to_dset_idx, map_to_start_time = get_ipu_indices(
+                self.dataset,
+                clip_duration=self.audio_duration,
                 vad_hop_time=self.vad_hop_time,
-                ipu_pause_time=ipu_pause_time,
-                ipu_min_time=ipu_min_time,
-                audio_context_time=audio_context_time,
+                ipu_pause_time=self.ipu_pause_time,
+                ipu_min_time=self.ipu_min_time,
+                audio_context_time=self.audio_context_time,
             )
         else:
-            self.map_to_dset_idx, self.map_to_start_time = get_sliding_window_indices(
-                dataset, audio_duration, self.audio_step_time
+            map_to_dset_idx, map_to_start_time = get_sliding_window_indices(
+                self.dataset, self.audio_duration, self.audio_step_time
             )
+        return map_to_dset_idx, map_to_start_time
+
 
     def __repr__(self):
         s = "DialogSlidingWindow"
@@ -256,19 +264,20 @@ class DialogAudioDataset(Dataset):
             mono=self.audio_mono,
         )
 
-        # TODO: extract relevant vad directly
-        # Extract Vad-frames based on a list of speaker activity
-        # channel_vad: [(start, end), (start,end), ...]
-        # [ch0_vad, ch1_vad]
-        # for both speakers
-        # duration of entire dialog
-        duration = get_audio_info(b["audio_path"])["duration"]
-        all_vad_frames = vad_list_to_onehot(
-            b["vad"],
-            hop_time=self.vad_hop_time,
-            duration=duration,
-            channel_last=True,
-        )
+        if self.vad:
+            # TODO: extract relevant vad directly
+            # Extract Vad-frames based on a list of speaker activity
+            # channel_vad: [(start, end), (start,end), ...]
+            # [ch0_vad, ch1_vad]
+            # for both speakers
+            # duration of entire dialog
+            duration = get_audio_info(b["audio_path"])["duration"]
+            all_vad_frames = vad_list_to_onehot(
+                b["vad"],
+                hop_time=self.vad_hop_time,
+                duration=duration,
+                channel_last=True,
+            )
 
         # dict to return
         ret = {
@@ -283,7 +292,7 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # History
         ##############################################
-        if self.vad_history:
+        if self.vad and self.vad_history:
             # history up until the current features arrive
             vh, _ = get_activity_history(
                 all_vad_frames,
@@ -294,18 +303,13 @@ class DialogAudioDataset(Dataset):
             ret["vad_history"] = vh[..., 0].unsqueeze(0)
 
         ##############################################
-        # VAD label
-        ##############################################
-        # time with vadlabel:   32 batch 5.027
-        # time without vadlabel: 32 batch 2.666
-
-        ##############################################
         # VAD
         ##############################################
         # add "silent" lookahead
         # add horizon after end (silence)
-        lookahead = torch.zeros((self.vad_horizon, 2))
-        ret["vad"] = torch.cat((all_vad_frames, lookahead)).unsqueeze(0)
+        if self.vad:
+            lookahead = torch.zeros((self.vad_horizon, 2))
+            ret["vad"] = torch.cat((all_vad_frames, lookahead)).unsqueeze(0)
         return ret
 
     def dialog_to_batch(self, d, audio_overlap=5, audio_duration=10, batch_size=16):
@@ -378,27 +382,29 @@ class DialogAudioDataset(Dataset):
         )
 
         # VAD-frame of relevant part
-        start_frame = time_to_frames(start_time, self.vad_hop_time)
-        end_frame = time_to_frames(end_time, self.vad_hop_time)
+        if self.vad:
+            start_frame = time_to_frames(start_time, self.vad_hop_time)
+            end_frame = time_to_frames(end_time, self.vad_hop_time)
+            duration = get_audio_info(b["audio_path"])["duration"]
 
-        # TODO: extract relevant vad directly
-        # Extract Vad-frames based on a list of speaker activity
-        # channel_vad: [(start, end), (start,end), ...]
-        # [ch0_vad, ch1_vad]
-        # for both speakers
-        # duration of entire dialog
-        duration = get_audio_info(b["audio_path"])["duration"]
-        all_vad_frames = vad_list_to_onehot(
-            b["vad"],
-            hop_time=self.vad_hop_time,
-            duration=duration,
-            channel_last=True,
-        )
+            # TODO: extract relevant vad directly
+            # Extract Vad-frames based on a list of speaker activity
+            # channel_vad: [(start, end), (start,end), ...]
+            # [ch0_vad, ch1_vad]
+            # for both speakers
+            # duration of entire dialog
+            all_vad_frames = vad_list_to_onehot(
+                b["vad"],
+                hop_time=self.vad_hop_time,
+                duration=duration,
+                channel_last=True,
+            )
 
         if self.flip_channels and torch.rand(1) > self.flip_probability:
-            all_vad_frames = torch.stack(
-                (all_vad_frames[:, 1], all_vad_frames[:, 0]), dim=-1
-            )
+            if self.vad:
+                all_vad_frames = torch.stack(
+                    (all_vad_frames[:, 1], all_vad_frames[:, 0]), dim=-1
+                )
             if not self.audio_mono:
                 waveform = torch.stack((waveform[1], waveform[0]))
 
@@ -415,7 +421,7 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # History
         ##############################################
-        if self.vad_history:
+        if self.vad and self.vad_history:
             # history up until the current features arrive
             vad_history, _ = get_activity_history(
                 all_vad_frames,
@@ -435,14 +441,15 @@ class DialogAudioDataset(Dataset):
         ##############################################
         # VAD
         ##############################################
-        if end_frame + self.vad_horizon > all_vad_frames.shape[0]:
-            lookahead = torch.zeros(
-                (self.vad_horizon + 1, 2)
-            )  # add horizon after end (silence)
-            all_vad_frames = torch.cat((all_vad_frames, lookahead))
-        ret["vad"] = all_vad_frames[
-            start_frame : end_frame + self.vad_horizon
-        ].unsqueeze(0)
+        if self.vad:
+            if end_frame + self.vad_horizon > all_vad_frames.shape[0]:
+                lookahead = torch.zeros(
+                    (self.vad_horizon + 1, 2)
+                )  # add horizon after end (silence)
+                all_vad_frames = torch.cat((all_vad_frames, lookahead))
+            ret["vad"] = all_vad_frames[
+                start_frame : end_frame + self.vad_horizon
+            ].unsqueeze(0)
         return ret
 
     def __getitem__(self, idx):
@@ -455,9 +462,7 @@ class DialogAudioDataset(Dataset):
 
 
 if __name__ == "__main__":
-    from datasets_turntaking.dialog_audio.dm_dialog_audio import (
-        get_dialog_audio_datasets,
-    )
+    from datasets_turntaking.dialog_audio_dm import get_dialog_audio_datasets
 
     # from datasets_turntaking.features.plot_utils import plot_vad_sample
     # import sounddevice as sd

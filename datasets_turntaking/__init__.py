@@ -1,3 +1,3 @@
-from .dialog_audio.dm_dialog_audio import DialogAudioDM
-from .dm_mono_speech import SpeechAudioModule
-from .dm_conversational import ConversationalDM
+from .dialog_audio_dm import DialogAudioDM
+from .dialog_text_dm import ConversationalDM
+from .mono_speech_dm import SpeechAudioModule

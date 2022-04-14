@@ -14,10 +14,10 @@ from datasets_turntaking.features.f0 import pYAAPT
 
 from vap_turn_taking.utils import get_vad_condensed_history, get_current_vad_onehot
 
-DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
-F0_MEAN_PATH = join(repo_root(), "datasets_turntaking/switchboard/f0_means.json")
+DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/dataset/switchboard/switchboard.py")
+F0_MEAN_PATH = join(repo_root(), "datasets_turntaking/dataset/switchboard/f0_means.json")
 CACHE_PATH = join(
-    expanduser("~"), ".cache/datasets_turntaking/switchboard/classification"
+    expanduser("~"), ".cache/datasets_turntaking/dataset/switchboard/classification"
 )
 AUDIO_ROOT = join(expanduser("~"), "projects/data/switchboard/audio")
 

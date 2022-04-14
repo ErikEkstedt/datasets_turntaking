@@ -19,7 +19,7 @@ F0_MEAN_PATH = join(
 )
 AUDIO_ROOT = join(expanduser("~"), "projects/data/switchboard/audio")
 CACHE_PATH = join(
-    expanduser("~"), ".cache/datasets_turntaking/switchboard/classification/prosody"
+    expanduser("~"), ".cache/datasets_turntaking/dataset/switchboard/classification/prosody"
 )
 
 

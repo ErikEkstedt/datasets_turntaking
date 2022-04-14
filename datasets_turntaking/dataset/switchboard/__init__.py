@@ -3,7 +3,7 @@ from datasets import load_dataset
 from datasets_turntaking.utils import repo_root
 
 
-DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
+DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/dataset/switchboard/switchboard.py")
 AUDIO_DIR = join(expanduser("~"), "projects/data/switchboard/audio")
 EXT = ".wav"
 

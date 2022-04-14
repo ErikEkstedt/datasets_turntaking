@@ -151,9 +151,6 @@ def imshow_features(features, names=None, figsize=(8, 16), plot=False):
 
 def debug():
     import matplotlib.pyplot as plt
-    from datasets_turntaking.dm_dialog_audio import quick_load_dm
-
-    dm = quick_load_dm()
     diter = iter(dm.val_dataloader())
     batch = next(diter)
     smile = OpenSmile(feature_set="emobase", normalize=True)

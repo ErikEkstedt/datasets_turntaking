@@ -1,6 +1,8 @@
 from os.path import basename, dirname
+from os import remove
 from omegaconf import OmegaConf
 import json
+import subprocess
 
 import torch
 import torchaudio
@@ -215,3 +217,15 @@ class OmegaConfArgs:
                         if argname in args:
                             conf[field][setting] = args[argname]
         return conf
+
+
+def delete_path(filepath):
+    remove(filepath)
+
+
+def sph2pipe_to_wav(sph_file):
+    wav_file = sph_file.replace(".sph", ".wav")
+    subprocess.check_call(["sph2pipe", sph_file, wav_file])
+    return wav_file
+
+

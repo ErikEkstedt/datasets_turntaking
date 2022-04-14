@@ -1,12 +1,11 @@
 from os.path import join
 import os
-from tqdm import tqdm
 from typing import List
 
 import datasets
 from datasets import Value, Sequence
 
-from datasets_turntaking.switchboard.utils import (
+from datasets_turntaking.dataset.switchboard.utils import (
     extract_dialog,
     extract_vad_list_from_words,
     remove_words_from_dialog,
@@ -21,9 +20,9 @@ logger = datasets.logging.get_logger(__name__)
 
 
 REL_AUDIO_PATH = join(
-    repo_root(), "datasets_turntaking/switchboard/files/relative_audio_path.json"
+    repo_root(), "datasets_turntaking/dataset/switchboard/files/relative_audio_path.json"
 )
-SPLIT_PATH = os.path.join(repo_root(), "datasets_turntaking/switchboard/files")
+SPLIT_PATH = os.path.join(repo_root(), "datasets_turntaking/dataset/switchboard/files")
 
 
 _HOMEPAGE = "https://catalog.ldc.upenn.edu/LDC97S62"

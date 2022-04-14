@@ -1,9 +1,8 @@
 import pytest
 
-from datasets_turntaking.callhome.utils import callhome_regexp
+from datasets_turntaking.dataset.callhome.utils import callhome_regexp
 
 
-@pytest.mark.dataset
 @pytest.mark.callhome
 def test_regexp():
 

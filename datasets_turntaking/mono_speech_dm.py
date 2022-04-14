@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from datasets_turntaking.utils import load_waveform, time_to_frames_samples
-from datasets_turntaking.speech import load_multiple_datasets
+from datasets_turntaking.dataset.speech import load_multiple_datasets
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/speech")
 

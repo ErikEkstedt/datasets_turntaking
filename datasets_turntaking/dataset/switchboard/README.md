@@ -15,7 +15,7 @@ Example of use
 ```python
 
 # path to `switchboard.py` script
-DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/switchboard/switchboard.py")
+DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/dataset/switchboard/switchboard.py")
 
 dataset = load_dataset(
     DATASET_SCRIPT,
@@ -37,7 +37,7 @@ Backchannels
 
 #### Processing
 
-These processing steps are performed for configs with `clean` e.g. `strict_time_clean`. See `datasets_turntaking/switchboard/utils.py`.
+These processing steps are performed for configs with `clean` e.g. `strict_time_clean`. See `datasets_turntaking/dataset/switchboard/utils.py`.
 - Noise
   - remove noise
   - `[noise]`

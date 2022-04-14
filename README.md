@@ -3,8 +3,10 @@
 
 ## Dialog Audio
 
-* [dm_dialog_audio.py](./dm_dialog_audio.py)
+* [dialog_audio_dm.py](./dialog_audio_dm.py)
 * [x] Switchboard
+* [x] Fisher
+* [ ] Candor
 * [ ] Callhome
 * [ ] Maptask
 * [ ] Spotify
@@ -12,7 +14,7 @@
 
 ## Mono Speech Audio
 
-* [dm_mono_speech.py](./dm_mono_speech.py)
+* [mono_speech_dm.py](./mono_speech_dm.py)
 * [x] Librispeech
 * [x] LJ-speech
 * [x] VCTK
@@ -23,7 +25,7 @@
 
 ## Conversational Text
 
-* [dm_conversational.py](./dm_conversational.py)
+* [dialog_text_dm.py](./dialog_text_dm.py)
 * [x] `curiosity_dialogs`
 * [x] `daily_dialog`
 * [x] `multi_woz_v22`

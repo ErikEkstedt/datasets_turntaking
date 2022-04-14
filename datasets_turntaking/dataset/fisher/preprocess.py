@@ -1,13 +1,9 @@
 from argparse import ArgumentParser
 from os.path import exists
 from tqdm import tqdm
-from datasets_turntaking.preprocess_utils import (
-    sph_to_wav,
-    delete_path,
-    sph2pipe_to_wav,
-)
-from datasets_turntaking.fisher.utils import get_audio_path
-from datasets_turntaking.fisher.fisher import TOTAL_FILES
+from datasets_turntaking.utils import delete_path, sph2pipe_to_wav
+from datasets_turntaking.dataset.fisher.utils import get_audio_path
+from datasets_turntaking.dataset.fisher.fisher import TOTAL_FILES
 
 
 def to_wav_and_delete(nnn, root):

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from datasets import concatenate_datasets, load_from_disk
 import pytorch_lightning as pl
 
-from datasets_turntaking.conversational.utils import load_multiple_datasets
+from datasets_turntaking.dataset.conversational.utils import load_multiple_datasets
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
 

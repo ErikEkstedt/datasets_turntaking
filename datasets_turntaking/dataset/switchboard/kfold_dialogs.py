@@ -2,10 +2,10 @@ from os.path import join
 from sklearn.model_selection import KFold
 
 from datasets_turntaking.utils import read_txt, write_txt
-from datasets_turntaking.switchboard.switchboard import INCLUDES_ASIDES
+from datasets_turntaking.dataset.switchboard.switchboard import INCLUDES_ASIDES
 
 
-KFOLD_ROOT = "datasets_turntaking/switchboard/files/kfolds"
+KFOLD_ROOT = "datasets_turntaking/dataset/switchboard/files/kfolds"
 
 
 def write_kfolds(train_val, path=None):
@@ -28,9 +28,9 @@ def write_kfolds(train_val, path=None):
 if __name__ == "__main__":
 
     # Load all files/dialogs-numbers
-    train = read_txt("datasets_turntaking/switchboard/files/train.txt")
-    val = read_txt("datasets_turntaking/switchboard/files/val.txt")
-    test = read_txt("datasets_turntaking/switchboard/files/test.txt")
+    train = read_txt("datasets_turntaking/dataset/switchboard/files/train.txt")
+    val = read_txt("datasets_turntaking/dataset/switchboard/files/val.txt")
+    test = read_txt("datasets_turntaking/dataset/switchboard/files/test.txt")
 
     # combine train+val but omit those which INCLUDES_ASIDES
     train_val = []
