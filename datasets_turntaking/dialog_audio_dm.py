@@ -1,6 +1,7 @@
 from os import cpu_count, environ
 from os.path import join
 from typing import Optional, Dict
+from datasets import concatenate_datasets
 
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
@@ -9,16 +10,13 @@ environ["DATASETS_VERBOSITY"] = "error"
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from datasets import concatenate_datasets
 
+from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
 from datasets_turntaking.dataset.callhome import load_callhome
 from datasets_turntaking.dataset.fisher import load_fisher
 from datasets_turntaking.dataset.switchboard import load_switchboard
-from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
+from datasets_turntaking.dataset.vacation_interview import load_vacation_interview
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
-
-
-DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
 
 
 def get_dialog_audio_datasets(
@@ -41,12 +39,17 @@ def get_dialog_audio_datasets(
             )
         elif d == "fisher":
             dsets.append(load_fisher(split=split))
+        elif d == "vacation_interview":
+            dsets.append(load_vacation_interview())
         elif d == "callhome":
             dsets.append(load_callhome(split))
         else:
             raise NotImplementedError(f"{d} is not yet implemented")
     dsets = concatenate_datasets(dsets)
     return dsets
+
+
+DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
 
 
 class DialogAudioDM(pl.LightningDataModule):

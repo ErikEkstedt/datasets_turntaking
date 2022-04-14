@@ -3,7 +3,7 @@ from datasets import load_dataset
 from datasets_turntaking.utils import repo_root
 
 DATASET_SCRIPT = join(
-    repo_root(), "datasets_turntaking/vacation_interview/vacation_interview.py"
+    repo_root(), "datasets_turntaking/dataset/vacation_interview/vacation_interview.py"
 )
 
 
