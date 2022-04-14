@@ -200,8 +200,7 @@ class DialogAudioDataset(Dataset):
 
         self.map_to_dset_idx, self.map_to_start_time = self.get_sample_maps(type)
 
-
-    def get_sample_maps(self, type='sliding'):
+    def get_sample_maps(self, type="sliding"):
         if type == "ipu":
             map_to_dset_idx, map_to_start_time = get_ipu_indices(
                 self.dataset,
@@ -216,7 +215,6 @@ class DialogAudioDataset(Dataset):
                 self.dataset, self.audio_duration, self.audio_step_time
             )
         return map_to_dset_idx, map_to_start_time
-
 
     def __repr__(self):
         s = "DialogSlidingWindow"
@@ -249,11 +247,11 @@ class DialogAudioDataset(Dataset):
     def __len__(self):
         return len(self.map_to_dset_idx)
 
-    def get_dialog_sample(self, idx):
+    def get_dialog_sample(self, idx, flip=False):
         d = self.dataset[idx]
-        return self.get_full_sample(d)
+        return self.get_full_sample(d, flip=flip)
 
-    def get_full_sample(self, b):
+    def get_full_sample(self, b, flip=False):
         """Get the sample from the dialog"""
         # Loads the dialog waveform (stereo) and normalize/to-mono for each
         # smaller segment in loop below
@@ -278,6 +276,14 @@ class DialogAudioDataset(Dataset):
                 duration=duration,
                 channel_last=True,
             )
+            if flip:
+                all_vad_frames = torch.stack(
+                    (all_vad_frames[:, 1], all_vad_frames[:, 0]), dim=-1
+                )
+
+        if flip:
+            if not self.audio_mono:
+                waveform = torch.stack((waveform[1], waveform[0]))
 
         # dict to return
         ret = {
