@@ -241,11 +241,11 @@ class DialogAudioDataset(Dataset):
     def __len__(self):
         return len(self.map_to_dset_idx)
 
-    def get_dialog_sample(self, idx):
+    def get_dialog_sample(self, idx, flip=False):
         d = self.dataset[idx]
-        return self.get_full_sample(d)
+        return self.get_full_sample(d, flip=flip)
 
-    def get_full_sample(self, b):
+    def get_full_sample(self, b, flip=False):
         """Get the sample from the dialog"""
         # Loads the dialog waveform (stereo) and normalize/to-mono for each
         # smaller segment in loop below
@@ -269,6 +269,13 @@ class DialogAudioDataset(Dataset):
             duration=duration,
             channel_last=True,
         )
+
+        if flip:
+            all_vad_frames = torch.stack(
+                (all_vad_frames[:, 1], all_vad_frames[:, 0]), dim=-1
+            )
+            if not self.audio_mono:
+                waveform = torch.stack((waveform[1], waveform[0]))
 
         # dict to return
         ret = {
