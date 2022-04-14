@@ -18,4 +18,4 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.pause(0.1)
 
-    plt.close("all")
+    sd.play(x[0], samplerate=sr)

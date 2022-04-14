@@ -14,6 +14,7 @@ from datasets import concatenate_datasets
 from datasets_turntaking.callhome import load_callhome
 from datasets_turntaking.fisher import load_fisher
 from datasets_turntaking.switchboard import load_switchboard
+from datasets_turntaking.vacation_interview import load_vacation_interview
 from datasets_turntaking.dialog_audio.dataset import DialogAudioDataset
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 
@@ -41,6 +42,8 @@ def get_dialog_audio_datasets(
             )
         elif d == "fisher":
             dsets.append(load_fisher(split=split))
+        elif d == "vacation_interview":
+            dsets.append(load_vacation_interview())
         elif d == "callhome":
             dsets.append(load_callhome(split))
         else:
