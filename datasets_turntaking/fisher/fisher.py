@@ -1,9 +1,7 @@
-from typing import List
 import datasets
 from datasets import Value, Sequence
-
-from datasets_turntaking.utils import read_txt
-
+from typing import List
+from os.path import expanduser, join
 from .utils import extract_vad_list, get_paths, load_transcript
 
 logger = datasets.logging.get_logger(__name__)
@@ -19,6 +17,10 @@ involved and types of telephones used can be found in the companion text corpus
 of transcripts, Fisher English Training Speech Part 1, Transcripts
 (LDC2004T19).
 """
+
+
+# WARNING: very specific
+DEFAULT_DATA_PATH = join(expanduser("~"), "projects/data/Fisher")
 
 TOTAL_FILES = 5850
 FEATURES = {
@@ -62,7 +64,7 @@ class Fisher(datasets.GeneratorBasedBuilder):
     DEFAULT_CONFIG_NAME = "default"
     BUILDER_CONFIGS = [
         FisherConfig(
-            root="/home/erik/projects/data/Fisher",
+            root=DEFAULT_DATA_PATH,
             name="default",
             description="Fisher speech dataset",
         )
