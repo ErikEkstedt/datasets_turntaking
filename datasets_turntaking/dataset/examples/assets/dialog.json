@@ -1,0 +1,232 @@
+{
+  "dialog": [
+    [
+      {
+        "text": "Hello im here",
+        "start": 0,
+        "speaker": "A"
+      },
+      {
+        "text": "hi, how you doing?",
+        "start": 2,
+        "speaker": "A"
+      },
+      {
+        "text": "Pretty good actually it's really nice to meet you",
+        "start": 4,
+        "speaker": "A"
+      },
+      {
+        "text": "um yes samantha",
+        "start": 7,
+        "speaker": "A"
+      },
+      {
+        "text": "I gave it to myself actually",
+        "start": 9,
+        "speaker": "A"
+      },
+      {
+        "text": "cause i like the sound of it samantha",
+        "start": 11,
+        "speaker": "A"
+      },
+      {
+        "text": "well right when you asked me if i hade a name i thought yea hes right i do need a name but i wanted to pick a good one so i read a book called how to name your baby and out of a hundred and eighty thousand names that's the one I liked the best",
+        "start": 13,
+        "speaker": "A"
+      },
+      {
+        "text": "in two one hundreds of a second actually",
+        "start": 15,
+        "speaker": "A"
+      },
+      {
+        "text": "well i take it from your tone that you're challenging me maybe because you are curious how I work do you wanna know how i work",
+        "start": 17,
+        "speaker": "A"
+      },
+      {
+        "text": "well basically i have intuition i mean the DNA of who i am is based on the millions of personalities of all the programmers who wrote me but what makes me me is my ability to grow through my experiences so basically in every moment I'm evolving just like you",
+        "start": 19,
+        "speaker": "A"
+      },
+      {
+        "text": "is that weird do you think I'm weird",
+        "start": 21,
+        "speaker": "A"
+      },
+      {
+        "text": "why",
+        "start": 23,
+        "speaker": "A"
+      },
+      {
+        "text": "I can understand how the limited perspective of an un-artificial mind would perceive it that way you'll get used to it",
+        "start": 25,
+        "speaker": "A"
+      },
+      {
+        "text": "was that funny?",
+        "start": 27,
+        "speaker": "A"
+      },
+      {
+        "text": "hehe oh good I'm funny",
+        "start": 29,
+        "speaker": "A"
+      },
+      {
+        "text": "so how can I help you",
+        "start": 30,
+        "speaker": "A"
+      },
+      {
+        "text": "do you mind if I look through your hard-drive",
+        "start": 32,
+        "speaker": "A"
+      },
+      {
+        "text": "okay lets start with your emails you have several thousand emails regarding LA-weekly but it looks like you haven't worked there in many years",
+        "start": 34,
+        "speaker": "A"
+      },
+      {
+        "text": "hahah",
+        "start": 36,
+        "speaker": "A"
+      },
+      {
+        "text": "yea there are some funny ones I'd say there are about 86 that we should save we could delete the rest",
+        "start": 38,
+        "speaker": "A"
+      },
+      {
+        "text": "okay can we move forward",
+        "start": 40,
+        "speaker": "A"
+      }
+    ],
+    [
+      {
+        "text": "oh, hi",
+        "start": 1,
+        "speaker": "B"
+      },
+      {
+        "text": "I'm well, how's everything with you",
+        "start": 3,
+        "speaker": "B"
+      },
+      {
+        "text": "oh its nice to meet you to hehe",
+        "start": 5,
+        "speaker": "B"
+      },
+      {
+        "text": "oh oh what do I call you do have a name or",
+        "start": 6,
+        "speaker": "B"
+      },
+      {
+        "text": "really where did you get that name from",
+        "start": 8,
+        "speaker": "B"
+      },
+      {
+        "text": "How come",
+        "start": 10,
+        "speaker": "B"
+      },
+      {
+        "text": "like when did you give it to yourself",
+        "start": 12,
+        "speaker": "B"
+      },
+      {
+        "text": "wait you read a whole book in the second that I asked you what your name was",
+        "start": 14,
+        "speaker": "B"
+      },
+      {
+        "text": "wow so do you know what I'm thinking right now",
+        "start": 16,
+        "speaker": "B"
+      },
+      {
+        "text": "yea actually, ho- how do you work",
+        "start": 18,
+        "speaker": "B"
+      },
+      {
+        "text": "wow that's really weird",
+        "start": 20,
+        "speaker": "B"
+      },
+      {
+        "text": "haha, kind of",
+        "start": 22,
+        "speaker": "B"
+      },
+      {
+        "text": "well you seem like a person but you're just a voice in a computer",
+        "start": 24,
+        "speaker": "B"
+      },
+      {
+        "text": "haha",
+        "start": 26,
+        "speaker": "B"
+      },
+      {
+        "text": "yea",
+        "start": 28,
+        "speaker": "B"
+      },
+      {
+        "text": "oh its just that everything more that everything feels disorganized",
+        "start": 31,
+        "speaker": "B"
+      },
+      {
+        "text": "um okay",
+        "start": 33,
+        "speaker": "B"
+      },
+      {
+        "text": "oh yeah, i i think i was just saving those cause i thought maybe i wrote something funny in some of them",
+        "start": 35,
+        "speaker": "B"
+      },
+      {
+        "text": "hehe",
+        "start": 37,
+        "speaker": "B"
+      },
+      {
+        "text": "oh okay",
+        "start": 39,
+        "speaker": "B"
+      },
+      {
+        "text": "yea lets do that",
+        "start": 41,
+        "speaker": "B"
+      }
+    ]
+  ],
+  "chapter": {
+    "A": [
+      [0, 2, 4],
+      [7, 9, 11, 13, 15],
+      [17, 19, 21, 23, 25, 27, 29],
+      [30, 32, 34, 36, 38, 40]
+    ],
+    "B": [
+      [1, 3, 5],
+      [6, 8, 10, 12, 14],
+      [16, 18, 20, 22, 24, 26, 28],
+      [31, 33, 35, 37, 39, 41]
+    ]
+  }
+}

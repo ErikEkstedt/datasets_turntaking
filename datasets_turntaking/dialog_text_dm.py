@@ -30,13 +30,13 @@ class ConversationalDM(pl.LightningDataModule):
     def __init__(
         self,
         tokenizer,
+        datasets=None,
         savepath=None,
         batch_size=2,
         max_length=1024,
         num_workers=1,
         pin_memory=True,
         overwrite=False,
-        datasets=None,
         load_from_cache_file=True,
         num_proc=None,
     ):

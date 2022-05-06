@@ -1,11 +1,13 @@
 from os import cpu_count, environ
-from os.path import join
-from typing import Optional, Dict
-from datasets import concatenate_datasets
 
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
 environ["DATASETS_VERBOSITY"] = "error"
+
+from os.path import join
+from typing import Optional, Dict
+from datasets import concatenate_datasets
+
 
 import torch
 from torch.utils.data import DataLoader
@@ -66,6 +68,7 @@ class DialogAudioDM(pl.LightningDataModule):
         ipu_min_time=1,
         ipu_pause_time=0.2,
         sample_rate=16000,
+        vad=True,
         vad_hz=100,
         vad_horizon=2,
         vad_history=False,
@@ -99,6 +102,7 @@ class DialogAudioDM(pl.LightningDataModule):
         self.ipu_pause_time = ipu_pause_time
 
         # VAD
+        self.vad = vad
         self.vad_hz = vad_hz
         self.vad_horizon = vad_horizon
         self.vad_history = vad_history
@@ -149,6 +153,7 @@ class DialogAudioDM(pl.LightningDataModule):
             audio_overlap=self.audio_overlap,
             audio_normalize=self.audio_normalize,
             sample_rate=self.sample_rate,
+            vad=self.vad,
             vad_hz=self.vad_hz,
             vad_horizon=self.vad_horizon,
             vad_history=self.vad_history,

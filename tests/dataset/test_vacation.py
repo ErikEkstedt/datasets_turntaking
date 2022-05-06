@@ -24,7 +24,7 @@ def test_dm(type, vad, vad_history, vad_hz, sample_rate):
         vad_hz=vad_hz,
         vad_horizon=2,
         vad_history=vad_history,
-        vad_history_times=[60, 30, 15, 10, 5],
+        vad_history_times=[60, 30, 10, 5],
         batch_size=4,
         num_workers=0,
     )
