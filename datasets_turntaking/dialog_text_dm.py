@@ -37,6 +37,7 @@ class ConversationalDM(pl.LightningDataModule):
         num_workers=1,
         pin_memory=True,
         overwrite=False,
+        include_dialog=False,
         load_from_cache_file=True,
         num_proc=None,
     ):
@@ -50,6 +51,7 @@ class ConversationalDM(pl.LightningDataModule):
         # `datasets` parameters
         self.load_from_cache_file = load_from_cache_file
         self.num_proc = num_proc
+        self.include_dialog = include_dialog
 
         # Datasets
         if datasets is None:
@@ -132,6 +134,9 @@ class ConversationalDM(pl.LightningDataModule):
         )["input_ids"]
         for k, v in ret.items():
             ret[k] = torch.tensor(v)
+
+        if self.include_dialog:
+            ret["dialog"] = [b["dialog"] for b in batch]
         return ret
 
     def train_dataloader(self):
@@ -189,12 +194,12 @@ class ConversationalDM(pl.LightningDataModule):
 
 if __name__ == "__main__":
 
-    from convlm.turngpt.tokenizer import SpokenDialogTokenizer
+    # https://github.com/ErikEkstedt/TurnGPT
+    from turngpt.tokenizer import SpokenDialogTokenizer
 
     parser = ArgumentParser()
     parser = ConversationalDM.add_data_specific_args(parser)
     args = parser.parse_args()
-
     for k, v in vars(args).items():
         print(f"{k}: {v}")
 
@@ -208,13 +213,17 @@ if __name__ == "__main__":
         pin_memory=args.pin_memory,
         savepath=args.savepath,
         overwrite=args.overwrite,
-        datasets=args.datasets,
+        datasets=["daily_dialog"],
         load_from_cache_file=args.load_from_cache_file,
         num_proc=args.num_proc,
+        include_dialog=True,
     )
     dm.prepare_data()
     dm.setup()
 
     batch = next(iter(dm.train_dataloader()))
     for k, v in batch.items():
-        print(k, type(v), tuple(v.shape))
+        if isinstance(v, torch.Tensor):
+            print(k, type(v), tuple(v.shape))
+        else:
+            print(k, v)
