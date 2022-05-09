@@ -3,7 +3,7 @@ from os.path import join
 from datasets_turntaking.utils import read_json, repo_root, write_json
 
 SPLIT_PATH = join(
-    repo_root(), "datasets_turntaking/conversational/splits/metawoz_splits.json"
+    repo_root(), "datasets_turntaking/dataset/conversational/splits/metawoz_splits.json"
 )
 
 

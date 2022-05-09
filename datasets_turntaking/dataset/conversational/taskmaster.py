@@ -4,10 +4,12 @@ from datasets import concatenate_datasets
 from datasets_turntaking.utils import repo_root, read_json, write_json
 
 SPLIT_PATH2 = join(
-    repo_root(), "datasets_turntaking/conversational/splits/taskmaster2_splits.json"
+    repo_root(),
+    "datasets_turntaking/dataset/conversational/splits/taskmaster2_splits.json",
 )
 SPLIT_PATH3 = join(
-    repo_root(), "datasets_turntaking/conversational/splits/taskmaster3_splits.json"
+    repo_root(),
+    "datasets_turntaking/dataset/conversational/splits/taskmaster3_splits.json",
 )
 
 
