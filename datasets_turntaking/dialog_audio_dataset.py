@@ -414,6 +414,11 @@ class DialogAudioDataset(Dataset):
             if not self.audio_mono:
                 waveform = torch.stack((waveform[1], waveform[0]))
 
+        if not self.audio_mono:
+            waveform = waveform.unsqueeze(
+                0
+            )  # add batch dim (2, n_samples) -> (1, 2, n_samples)
+
         # dict to return
         ret = {
             "waveform": waveform,
