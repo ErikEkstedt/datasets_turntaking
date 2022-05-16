@@ -80,10 +80,12 @@ class DialogAudioDM(pl.LightningDataModule):
         batch_size=4,
         num_workers=0,
         pin_memory=True,
+        transforms=None,
     ):
         super().__init__()
         self.datasets = datasets  # names of datasets
         self.type = type
+        self.transforms = transforms
 
         # IterableDataset
         # Audio (waveforms)
@@ -146,6 +148,7 @@ class DialogAudioDM(pl.LightningDataModule):
 
         return DialogAudioDataset(
             dataset=dset,
+            transforms=self.transforms,
             feature_extractor=None,
             type=self.type,
             audio_mono=self.audio_mono,

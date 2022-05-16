@@ -159,10 +159,12 @@ class DialogAudioDataset(Dataset):
         # DSET #################################
         flip_channels=True,
         flip_probability=0.5,
+        transforms=None,
     ):
         super().__init__()
         self.dataset = dataset  # Hugginface datasets
         self.feature_extractor = feature_extractor
+        self.transforms = transforms
 
         # Audio (waveforms)
         self.sample_rate = sample_rate
@@ -469,6 +471,11 @@ class DialogAudioDataset(Dataset):
         end_time = start_time + self.audio_duration
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
+
+        if self.transforms is not None:
+            n_frames = d["vad_history"].shape[1]
+            vad = d["vad"][:, :n_frames]
+            d["waveform"] = self.transforms(d["waveform"], vad=vad)
         return d
 
 
