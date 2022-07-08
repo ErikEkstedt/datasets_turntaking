@@ -140,15 +140,16 @@ class DialogAudioDataset(Dataset):
         feature_extractor=None,
         type="sliding",
         # AUDIO #################################
+        waveform=True,  # return waveforms
         sample_rate=16000,
         audio_mono=True,
         audio_duration=10,
         audio_normalize=True,
         # VAD #################################
-        vad=True,
+        vad=True,  # return vad
         vad_hz=100,
         vad_horizon=2,
-        vad_history=False,
+        vad_history=False,  # return vad_history
         vad_history_times=[60, 30, 10, 5],
         # Sliding #################################
         audio_overlap=2,  # Sliding Window
@@ -167,6 +168,7 @@ class DialogAudioDataset(Dataset):
         self.transforms = transforms
 
         # Audio (waveforms)
+        self.waveform = waveform
         self.sample_rate = sample_rate
         self.audio_mono = audio_mono
         self.audio_duration = audio_duration
@@ -380,14 +382,15 @@ class DialogAudioDataset(Dataset):
         """Get the sample from the dialog"""
         # Loads the dialog waveform (stereo) and normalize/to-mono for each
         # smaller segment in loop below
-        waveform, _ = load_waveform(
-            b["audio_path"],
-            sample_rate=self.sample_rate,
-            start_time=start_time,
-            end_time=end_time,
-            normalize=self.audio_normalize,
-            mono=self.audio_mono,
-        )
+        if self.waveform:
+            waveform, _ = load_waveform(
+                b["audio_path"],
+                sample_rate=self.sample_rate,
+                start_time=start_time,
+                end_time=end_time,
+                normalize=self.audio_normalize,
+                mono=self.audio_mono,
+            )
 
         # VAD-frame of relevant part
         if self.vad:
@@ -413,20 +416,22 @@ class DialogAudioDataset(Dataset):
                 all_vad_frames = torch.stack(
                     (all_vad_frames[:, 1], all_vad_frames[:, 0]), dim=-1
                 )
-            if not self.audio_mono:
+            if self.waveform and not self.audio_mono:
                 waveform = torch.stack((waveform[1], waveform[0]))
 
-        if not self.audio_mono:
+        if self.waveform and not self.audio_mono:
             waveform = waveform.unsqueeze(
                 0
             )  # add batch dim (2, n_samples) -> (1, 2, n_samples)
 
         # dict to return
         ret = {
-            "waveform": waveform,
             "dataset_name": b["dataset_name"],
             "session": b["session"],
         }
+
+        if self.waveform:
+            ret["waveform"] = waveform
 
         if self.feature_extractor is not None:
             ret["features"] = self.feature_extractor(waveform)
@@ -470,6 +475,7 @@ class DialogAudioDataset(Dataset):
         start_time = self.map_to_start_time[idx]
         end_time = start_time + self.audio_duration
         b = self.dataset[dset_idx]
+
         d = self.get_sample(b, start_time, end_time)
 
         if self.transforms is not None:

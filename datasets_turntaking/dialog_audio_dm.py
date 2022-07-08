@@ -59,6 +59,7 @@ class DialogAudioDM(pl.LightningDataModule):
         self,
         datasets,
         type="sliding",  # ipu
+        waveform=True,  # return waveform
         audio_mono=True,
         audio_duration=10,
         audio_normalize=True,
@@ -68,10 +69,10 @@ class DialogAudioDM(pl.LightningDataModule):
         ipu_min_time=1,
         ipu_pause_time=0.2,
         sample_rate=16000,
-        vad=True,
+        vad=True,  # return vad frames
         vad_hz=100,
         vad_horizon=2,
-        vad_history=False,
+        vad_history=False,  # return vad-history frames
         vad_history_times=[60, 30, 10, 5],
         flip_channels=True,
         train_files=None,
@@ -89,6 +90,7 @@ class DialogAudioDM(pl.LightningDataModule):
 
         # IterableDataset
         # Audio (waveforms)
+        self.waveform = waveform
         self.audio_mono = audio_mono
         self.audio_duration = audio_duration
         self.sample_rate = sample_rate
@@ -151,6 +153,7 @@ class DialogAudioDM(pl.LightningDataModule):
             transforms=self.transforms,
             feature_extractor=None,
             type=self.type,
+            waveform=self.waveform,
             audio_mono=self.audio_mono,
             audio_duration=self.audio_duration,
             audio_overlap=self.audio_overlap,
@@ -204,9 +207,10 @@ class DialogAudioDM(pl.LightningDataModule):
         dset_names = []
         sessions = []
         for b in batch:
-            waveforms.append(b["waveform"])
             dset_names.append(b["dataset_name"])
             sessions.append(b["session"])
+            if "waveform" in b:
+                waveforms.append(b["waveform"])
 
             if "vad" in b:
                 vad.append(b["vad"])
@@ -218,10 +222,13 @@ class DialogAudioDM(pl.LightningDataModule):
                 vad_label.append(b["vad_label"])
 
         ret = {
-            "waveform": torch.cat(waveforms),
             "dset_name": dset_names,
             "session": sessions,
         }
+
+        if len(waveforms) > 0:
+            ret["waveform"] = torch.cat(waveforms)
+
         if len(vad) > 0:
             ret["vad"] = torch.cat(vad)
 
