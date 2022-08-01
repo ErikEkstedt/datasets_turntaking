@@ -216,7 +216,7 @@ def combine_speaker_utterance_and_words(
     return utterances
 
 
-def extract_dialog(session, session_dir, apply_regexp=True):
+def load_transcript(session, session_dir, apply_regexp=True):
     """Extract the annotated dialogs based on config `name`"""
     # Config settings
 
@@ -264,5 +264,5 @@ if __name__ == "__main__":
     session = str(session)
     session_dir = join(extracted_path, "swb_ms98_transcriptions", session[:2], session)
     print(listdir(session_dir))
-    dialog = extract_dialog(session, session_dir)
+    dialog = load_transcript(session, session_dir)
     vad = extract_vad_list_from_words(dialog)

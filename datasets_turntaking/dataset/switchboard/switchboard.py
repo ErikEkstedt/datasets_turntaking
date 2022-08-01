@@ -1,4 +1,4 @@
-from os.path import join
+from os.path import join, expanduser
 import os
 from typing import List
 
@@ -6,7 +6,7 @@ import datasets
 from datasets import Value, Sequence
 
 from datasets_turntaking.dataset.switchboard.utils import (
-    extract_dialog,
+    load_transcript,
     extract_vad_list_from_words,
     remove_words_from_dialog,
 )
@@ -15,12 +15,14 @@ from datasets_turntaking.utils import (
     read_json,
     repo_root,
 )
+from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 
 logger = datasets.logging.get_logger(__name__)
 
 
 REL_AUDIO_PATH = join(
-    repo_root(), "datasets_turntaking/dataset/switchboard/files/relative_audio_path.json"
+    repo_root(),
+    "datasets_turntaking/dataset/switchboard/files/relative_audio_path.json",
 )
 SPLIT_PATH = os.path.join(repo_root(), "datasets_turntaking/dataset/switchboard/files")
 
@@ -48,27 +50,10 @@ _CITATION = """
 """
 
 
-FEATURES = {
-    "session": Value("string"),
-    "audio_path": Value("string"),
-    "vad": [
-        [Sequence(Value("float"))],
-    ],
-    "dialog": [
-        Sequence(
-            {
-                "start": Value("float"),
-                "end": Value("float"),
-                "text": Value("string"),
-            }
-        )
-    ],
-}
-
-
 class SwitchboardConfig(datasets.BuilderConfig):
     def __init__(
         self,
+        root=join(expanduser("~"), "projects/data/switchboard/audio"),
         train_sessions=None,
         val_sessions=None,
         test_sessions=None,
@@ -78,6 +63,7 @@ class SwitchboardConfig(datasets.BuilderConfig):
     ):
         super().__init__(**kwargs)
         self.ext = ext
+        self.root = root
         self.min_word_vad_diff = min_word_vad_diff
         self.train_sessions = (
             read_txt(os.path.join(SPLIT_PATH, "train.txt"))
@@ -111,7 +97,7 @@ class Swithchboard(datasets.GeneratorBasedBuilder):
             description=_DESCRIPTION,
             homepage=_HOMEPAGE,
             citation=_CITATION,
-            features=datasets.Features(FEATURES),
+            features=datasets.Features(DIALOG_AUDIO_FEATURES),
             supervised_keys=None,
         )
 
@@ -136,16 +122,20 @@ class Swithchboard(datasets.GeneratorBasedBuilder):
         sess_2_rel_path = read_json(REL_AUDIO_PATH)
         for session in sessions:
             session = str(session)
+            audio_path = join(
+                self.config.root, sess_2_rel_path[session] + self.config.ext
+            )
             session_dir = join(
                 self.extracted_path, "swb_ms98_transcriptions", session[:2], session
             )
-            dialog = extract_dialog(session, session_dir)
+
+            dialog = load_transcript(session, session_dir)
             vad = extract_vad_list_from_words(dialog, self.config.min_word_vad_diff)
-            audio_path = sess_2_rel_path[session]
             # omit words
             dialog = remove_words_from_dialog(dialog)
             yield f"{session}", {
                 "session": session,
+                "dataset": "switchboard",
                 "audio_path": audio_path,
                 "vad": vad,
                 "dialog": dialog,

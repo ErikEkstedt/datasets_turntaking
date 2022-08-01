@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from datasets import concatenate_datasets, load_from_disk
 import pytorch_lightning as pl
 
-from datasets_turntaking.dataset.conversational.utils import load_multiple_datasets
+from datasets_turntaking.dataset import load_multiple_datasets
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
 
@@ -31,9 +31,9 @@ class ConversationalDM(pl.LightningDataModule):
         self,
         tokenizer,
         datasets=None,
-        savepath=None,
+        savepath=CACHE_PATH,
         batch_size=2,
-        max_length=1024,
+        max_length=256,
         num_workers=1,
         pin_memory=True,
         overwrite=False,
@@ -63,9 +63,6 @@ class ConversationalDM(pl.LightningDataModule):
                 ), f"Must prepare dataset to be of correct format. Use {self.DATASETS}"
         self.datasets = datasets
         self.datasets.sort()  # sort for consistency
-
-        if savepath is None:
-            savepath = CACHE_PATH
         self.savepath = join(savepath, self.tokenizer.name_or_path)
         self.overwrite = overwrite
 
@@ -192,8 +189,7 @@ class ConversationalDM(pl.LightningDataModule):
         return parser
 
 
-if __name__ == "__main__":
-
+def main():
     # https://github.com/ErikEkstedt/TurnGPT
     from turngpt.tokenizer import SpokenDialogTokenizer
 
@@ -213,7 +209,7 @@ if __name__ == "__main__":
         pin_memory=args.pin_memory,
         savepath=args.savepath,
         overwrite=args.overwrite,
-        datasets=["daily_dialog"],
+        datasets=["curiosity_dialogs"],
         load_from_cache_file=args.load_from_cache_file,
         num_proc=args.num_proc,
         include_dialog=True,
@@ -227,3 +223,44 @@ if __name__ == "__main__":
             print(k, type(v), tuple(v.shape))
         else:
             print(k, v)
+
+
+if __name__ == "__main__":
+
+    # Debugging
+
+    from datasets_turntaking.dataset.switchboard import load_switchboard
+    from datasets_turntaking.dataset.fisher import load_fisher
+
+    split = "val"
+    dsets = [load_switchboard(split)]
+    dsets.append(load_fisher(split))
+
+    d = dset[264]
+    print("d: ", list(d.keys()))
+    a = d["dialog"][0]
+    b = d["dialog"][1]
+    print(a["text"])
+
+    for tt in a["text"]:
+        print(tt)
+
+    a["text"]
+
+    from datasets_turntaking.utils import load_waveform
+
+    x, sr = load_waveform(d["audio_path"])
+
+    for i, utt in enumerate(b["text"]):
+        if "[mn]" in utt:
+            print(i, utt)
+
+    import sounddevice as sd
+
+    i = 82
+    t = b["text"][i]
+    start = b["start"][i]
+    s = int(sr * (start))
+    d = int(sr * 5)
+    print(t)
+    sd.play(x[1, s : s + d], samplerate=sr)

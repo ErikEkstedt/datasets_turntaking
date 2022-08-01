@@ -7,3 +7,10 @@ if __name__ == "__main__":
     dset = load_switchboard(split="train")
 
     d = dset[0]
+
+    a = d["dialog"][0]
+    b = d["dialog"][1]
+
+    for utt in a["text"]:
+        print(utt)
+        input()
