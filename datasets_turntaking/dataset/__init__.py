@@ -118,10 +118,25 @@ def is_backchannel(utt):
 
 def join_utterances(utt1, utt2):
     utt = deepcopy(utt1)
+
     utt["text"] += " " + utt2["text"]
+    utt["end"] = utt2["end"]
+
     if "words" in utt:
         utt["words"] += utt2["words"]
-    utt["end"] = utt2["end"]
+
+    if "backchannel" in utt2:
+        utt["backchannel"] += utt2["backchannel"]
+
+    if "backchannel_start" in utt2:
+        utt["backchannel_start"] += utt2["backchannel_start"]
+
+    if "within" in utt2:
+        utt["within"] += utt2["within"]
+
+    if "within_start" in utt2:
+        utt["within_start"] += utt2["within_start"]
+
     return utt
 
 
@@ -153,8 +168,10 @@ def refine_dialog(utterances):  # , vad=None):
     first = utterances[0]
     first["backchannel"] = []
     first["backchannel_start"] = []
+    first["backchannel_end"] = []
     first["within"] = []
     first["within_start"] = []
+    first["within_end"] = []
     refined = [first]
     last_speaker = first["speaker"]
 
@@ -162,17 +179,21 @@ def refine_dialog(utterances):  # , vad=None):
         if is_backchannel(current):
             refined[-1]["backchannel"].append(current["text"])
             refined[-1]["backchannel_start"].append(current["start"])
+            refined[-1]["backchannel_end"].append(current["end"])
         elif is_overlap_within(current, refined[-1]):
             refined[-1]["within"].append(current["text"])
             refined[-1]["within_start"].append(current["start"])
+            refined[-1]["within_end"].append(current["end"])
         else:
             if current["speaker"] == last_speaker:
                 refined[-1] = join_utterances(refined[-1], current)
             else:
                 current["backchannel"] = []
                 current["backchannel_start"] = []
+                current["backchannel_end"] = []
                 current["within"] = []
                 current["within_start"] = []
+                current["within_end"] = []
                 refined.append(current)
                 last_speaker = current["speaker"]
     return refined
@@ -181,12 +202,10 @@ def refine_dialog(utterances):  # , vad=None):
 if __name__ == "__main__":
 
     split = "validation"
-    # dset = load_dataset(
-    #     SCRIPT_PATHS["fisher"], name="default", split="train", remove_restarts=True
+    # dsets = load_multiple_datasets(
+    #     ["fisher", "switchboard"], split=split, remove_restarts=True
     # )
-    dsets = load_multiple_datasets(
-        ["fisher", "switchboard"], split=split, remove_restarts=True
-    )
+    dsets = load_multiple_datasets(["switchboard"], split=split, remove_restarts=True)
     # dsets = load_multiple_datasets(["switchboard"], split=split)
     def encode(d):
         utterances = format_to_utterances(d)
@@ -211,8 +230,8 @@ if __name__ == "__main__":
             ") ->",
             u["text"],
         )
-        if len(u["within"]) > 0:
-            print("   WI ->", u["within"], u["within_start"])
-        if len(u["backchannel"]) > 0:
-            print("   BC ->", u["backchannel"], u["backchannel_start"])
+        # if len(u["within"]) > 0:
+        #     print("   WI ->", u["within"], u["within_start"], u["within_end"])
+        # if len(u["backchannel"]) > 0:
+        #     print("   BC ->", u["backchannel"], u["backchannel_start"], u["backchannel_end"])
         input()

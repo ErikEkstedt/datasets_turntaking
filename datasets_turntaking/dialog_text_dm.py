@@ -7,11 +7,15 @@ from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader
-
-from datasets import concatenate_datasets, load_from_disk
 import pytorch_lightning as pl
+from datasets import concatenate_datasets, load_from_disk
 
-from datasets_turntaking.dataset import load_multiple_datasets
+from datasets_turntaking.dataset import (
+    format_to_utterances,
+    load_multiple_datasets,
+    refine_dialog,
+)
+
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
 
@@ -25,6 +29,8 @@ class ConversationalDM(pl.LightningDataModule):
         "taskmaster1",
         "taskmaster2",
         "taskmaster3",
+        "switchboard",
+        "fisher",
     ]
 
     def __init__(
@@ -83,6 +89,27 @@ class ConversationalDM(pl.LightningDataModule):
         t = self.tokenizer(examples["dialog"])
         return {"input_ids": t["input_ids"], "speaker_ids": t["speaker_ids"]}
 
+    def encode_single(self, d):
+        utterances = format_to_utterances(d)
+        d["dialog"] = refine_dialog(utterances)
+        t = self.tokenizer(d["dialog"])
+        d["input_ids"] = t["input_ids"]
+        d["speaker_ids"] = t["speaker_ids"]
+        return d
+
+    def process_datasets(self, dset_list, split):
+        dsets = load_multiple_datasets(dset_list, split)
+        dataset = concatenate_datasets(dsets)
+        print("filter empty turns")
+        dataset = dataset.filter(self.filter_empty_turns)
+        dataset = dataset.map(
+            self.encode_single,
+            batched=False,
+            # load_from_cache_file=self.load_from_cache_file,
+            num_proc=self.num_proc,
+        )
+        return dataset
+
     def prepare_data(self):
         """Concatenates multiple datasets"""
 
@@ -105,8 +132,8 @@ class ConversationalDM(pl.LightningDataModule):
                 print("filter empty turns")
                 dataset = dataset.filter(self.filter_empty_turns)
                 dataset = dataset.map(
-                    self.encode,
-                    batched=True,
+                    self.encode_single,
+                    batched=False,
                     load_from_cache_file=self.load_from_cache_file,
                     num_proc=self.num_proc,
                 )
@@ -228,13 +255,41 @@ def main():
 if __name__ == "__main__":
 
     # Debugging
+    from datasets_turntaking.utils import load_waveform
+    from turngpt.tokenizer import SpokenDialogTokenizer
 
-    from datasets_turntaking.dataset.switchboard import load_switchboard
-    from datasets_turntaking.dataset.fisher import load_fisher
+    tokenizer = SpokenDialogTokenizer()
 
-    split = "val"
-    dsets = [load_switchboard(split)]
-    dsets.append(load_fisher(split))
+    def encode_single(d):
+        utterances = format_to_utterances(d)
+        d["dialog"] = refine_dialog(utterances)
+        utts = [u["text"] for u in d["dialog"]]
+        t = tokenizer(utts)
+        d["input_ids"] = t["input_ids"]
+        d["speaker_ids"] = t["speaker_ids"]
+        return d
+
+    split = "validation"
+    # dsets = load_multiple_datasets(['switchboard'], split=split)
+    dsets = load_multiple_datasets(["switchboard"], split=split)
+    dataset = concatenate_datasets(dsets)
+    # d = dataset[0]
+    # utterances = format_to_utterances(d)
+    # d["dialog"] = refine_dialog(utterances)
+    # utts = [u['text'] for u in d['dialog']]
+    # t = tokenizer(utts)
+    # d["input_ids"] = t["input_ids"]
+    # d["speaker_ids"] = t["speaker_ids"]
+    # print("filter empty turns")
+    # dataset = dataset.filter(self.filter_empty_turns)
+    dataset = dataset.map(
+        encode_single,
+        batched=False,
+        # load_from_cache_file=self.load_from_cache_file,
+        num_proc=4,
+    )
+    d = dataset[0]
+    print("d: ", list(d.keys()))
 
     d = dset[264]
     print("d: ", list(d.keys()))
@@ -247,15 +302,11 @@ if __name__ == "__main__":
 
     a["text"]
 
-    from datasets_turntaking.utils import load_waveform
-
     x, sr = load_waveform(d["audio_path"])
 
     for i, utt in enumerate(b["text"]):
         if "[mn]" in utt:
             print(i, utt)
-
-    import sounddevice as sd
 
     i = 82
     t = b["text"][i]
