@@ -1,7 +1,7 @@
 from os.path import join
 from copy import deepcopy
 from datasets import Value, Sequence
-from datasets import load_dataset
+from datasets import concatenate_datasets, load_dataset
 
 from datasets_turntaking.utils import repo_root
 from datasets_turntaking.dataset.conversational import (
@@ -52,16 +52,24 @@ BACKCHANNEL_CANDIDATES = [
     "oh uh-huh",
 ]
 
+BACKCHANNEL_MAP = {
+    "uh-huh": "uhuh",
+    "huh-uh": "uhuh",
+    "uh-hum": "mhm",
+    "uh-hums": "mhm",
+    "um-hum": "mhm",
+    "hum-um": "mhm",
+    "uh-oh": "uhoh",
+}
+
 
 def load_multiple_datasets(datasets, split, **kwargs):
     dsets = []
     for d in datasets:
         if d in ["fisher", "switchboard"]:
-            dsets.append(load_dataset(SCRIPT_PATHS[d], split=split, **kwargs))
-
-            # dset = load_dataset(DATASET_SCRIPT, name="default", split=split, **kwargs)
-        # elif d == "switchboard":
-        #     dsets.append(load_switchboard(split, **kwargs))
+            dsets.append(
+                load_dataset(SCRIPT_PATHS[d], name="default", split=split, **kwargs)
+            )
         elif d == "curiosity_dialogs":
             dsets.append(load_curiosity_dialogs(split, **kwargs))
         elif d == "daily_dialog":
@@ -172,12 +180,14 @@ def refine_dialog(utterances):  # , vad=None):
 
 if __name__ == "__main__":
 
-    from datasets import concatenate_datasets
-
     split = "validation"
-    # dsets = load_multiple_datasets(["fisher", "switchboard"], split=split)
-    dsets = load_multiple_datasets(["switchboard"], split=split)
-
+    # dset = load_dataset(
+    #     SCRIPT_PATHS["fisher"], name="default", split="train", remove_restarts=True
+    # )
+    dsets = load_multiple_datasets(
+        ["fisher", "switchboard"], split=split, remove_restarts=True
+    )
+    # dsets = load_multiple_datasets(["switchboard"], split=split)
     def encode(d):
         utterances = format_to_utterances(d)
         d["dialog"] = refine_dialog(utterances)
@@ -190,8 +200,8 @@ if __name__ == "__main__":
         # load_from_cache_file=self.load_from_cache_file,
         num_proc=4,
     )
-
     d = dataset[1]
+
     for u in d["dialog"]:
         print(
             u["speaker"],

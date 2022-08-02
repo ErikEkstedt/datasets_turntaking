@@ -32,6 +32,7 @@ class FisherConfig(datasets.BuilderConfig):
         val_sessions=[str(i) for i in range(5100, 5500)],
         test_sessions=[str(i) for i in range(5500, TOTAL_FILES + 1)],
         apply_regexp=True,
+        remove_restarts=False,  # "h-" -> "" if True
         ext=".wav",
         **kwargs,
     ):
@@ -39,6 +40,7 @@ class FisherConfig(datasets.BuilderConfig):
         self.root = root
         self.ext = ext
         self.apply_regexp = apply_regexp
+        self.remove_restarts = remove_restarts
         self.train_sessions = train_sessions
         self.val_sessions = val_sessions
         self.test_sessions = test_sessions
@@ -85,7 +87,11 @@ class Fisher(datasets.GeneratorBasedBuilder):
             trans_path, audio_path = get_paths(
                 session, self.config.root, ext=self.config.ext
             )
-            dialog = load_transcript(trans_path, apply_regexp=self.config.apply_regexp)
+            dialog = load_transcript(
+                trans_path,
+                apply_regexp=self.config.apply_regexp,
+                remove_restarts=self.config.remove_restarts,
+            )
             vad = extract_vad_list(dialog)
             yield f"{session}", {
                 "session": session,

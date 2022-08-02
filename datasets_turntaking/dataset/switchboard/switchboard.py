@@ -5,6 +5,7 @@ from typing import List
 import datasets
 from datasets import Value, Sequence
 
+from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 from datasets_turntaking.dataset.switchboard.utils import (
     load_transcript,
     extract_vad_list_from_words,
@@ -15,7 +16,6 @@ from datasets_turntaking.utils import (
     read_json,
     repo_root,
 )
-from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 
 logger = datasets.logging.get_logger(__name__)
 
@@ -58,6 +58,7 @@ class SwitchboardConfig(datasets.BuilderConfig):
         val_sessions=None,
         test_sessions=None,
         min_word_vad_diff=0.05,
+        remove_restarts=False,  # "h-" -> "" if True
         ext=".wav",
         **kwargs,
     ):
@@ -65,6 +66,7 @@ class SwitchboardConfig(datasets.BuilderConfig):
         self.ext = ext
         self.root = root
         self.min_word_vad_diff = min_word_vad_diff
+        self.remove_restarts = remove_restarts
         self.train_sessions = (
             read_txt(os.path.join(SPLIT_PATH, "train.txt"))
             if train_sessions is None
@@ -129,7 +131,12 @@ class Swithchboard(datasets.GeneratorBasedBuilder):
                 self.extracted_path, "swb_ms98_transcriptions", session[:2], session
             )
 
-            dialog = load_transcript(session, session_dir)
+            dialog = load_transcript(
+                session,
+                session_dir,
+                apply_regexp=True,
+                remove_restarts=self.config.remove_restarts,
+            )
             vad = extract_vad_list_from_words(dialog, self.config.min_word_vad_diff)
             # omit words
             dialog = remove_words_from_dialog(dialog)

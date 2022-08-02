@@ -8,31 +8,7 @@ SPEAKER2CHANNEL = {"A": 0, "B": 1}
 
 
 # TODO:Specific cleaning of text?
-
-
-def get_audio_path(nnn, root, ext=".sph"):
-    dir = nnn[:3]
-    n = int(nnn)
-    if n < 800:
-        d = 1
-    else:
-        a = n - 800
-        d = a // 900 + 2
-    return join(root, f"fisher_eng_tr_sp_d{d}/audio/{dir}/fe_03_{nnn}{ext}")
-
-
-def get_transcript_path(nnn, root):
-    dir = nnn[:3]
-    return join(root, "fe_03_p1_tran/data/trans", f"{dir}/fe_03_{nnn}.txt")
-
-
-def get_paths(nnn, root, ext=".sph"):
-    audio_path = get_audio_path(nnn, root, ext=ext)
-    transcript = get_transcript_path(nnn, root)
-    return transcript, audio_path
-
-
-def fisher_regexp(s):
+def fisher_regexp(s, remove_restarts=False):
     """
 
     See information about annotations at:
@@ -65,6 +41,16 @@ def fisher_regexp(s):
     # [mn] inaubible?
     s = re.sub(r"\[mn\]", "", s)
 
+    # clean restarts
+    # if remove_restarts=False "h-" -> "h"
+    # if remove_restarts=True  "h-" -> ""
+    if remove_restarts:
+        s = re.sub(r"(\w+)-\s", " ", s)
+        s = re.sub(r"(\w+)-$", r"", s)
+    else:
+        s = re.sub(r"(\w+)-\s", r"\1 ", s)
+        s = re.sub(r"(\w+)-$", r"\1", s)
+
     # doubble paranthesis (DP) with included words
     # sometimes there is DP inside another DP
     s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
@@ -85,7 +71,29 @@ def fisher_regexp(s):
     return s.strip()  # remove whitespace start/end
 
 
-def load_transcript(path, apply_regexp=True):
+def get_audio_path(nnn, root, ext=".sph"):
+    dir = nnn[:3]
+    n = int(nnn)
+    if n < 800:
+        d = 1
+    else:
+        a = n - 800
+        d = a // 900 + 2
+    return join(root, f"fisher_eng_tr_sp_d{d}/audio/{dir}/fe_03_{nnn}{ext}")
+
+
+def get_transcript_path(nnn, root):
+    dir = nnn[:3]
+    return join(root, "fe_03_p1_tran/data/trans", f"{dir}/fe_03_{nnn}.txt")
+
+
+def get_paths(nnn, root, ext=".sph"):
+    audio_path = get_audio_path(nnn, root, ext=ext)
+    transcript = get_transcript_path(nnn, root)
+    return transcript, audio_path
+
+
+def load_transcript(path, apply_regexp=True, remove_restarts=False):
     """
     Load the speakers as appropriate channels
     """
@@ -107,7 +115,7 @@ def load_transcript(path, apply_regexp=True):
         text = " ".join(split_row[3:])
 
         if apply_regexp:
-            text = fisher_regexp(text)
+            text = fisher_regexp(text, remove_restarts=remove_restarts)
 
         # Omit empty
         if len(text) == 0:
@@ -166,11 +174,12 @@ if __name__ == "__main__":
     p3 = get_audio_path("05300", root)
 
     s = "hello [noise] are [laughter] (( uh-huh )) you (( watching tv on )) m._t._v. (( oh that's not old ))"
+    s = "h- he- hello uh-huh ver-"
     # s = "hello [noise] how [laughter] are (( ))"
     # s = re.sub(r"\(\(((\s\w*)+)\)\)", r"\1", s)
     # s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
     # print(s)
-    s = fisher_regexp(s)
+    s = fisher_regexp(s, True)
     print(s)
 
     # s = "cette plus facile (( au senegal aussi parce que je pouvais ))"
