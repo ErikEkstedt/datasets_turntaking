@@ -14,7 +14,7 @@ def load_multiwoz_v22(split="train"):
     """
 
     def add_dataset_name(examples):
-        examples["dataset_name"] = "multi_woz_v22"
+        examples["dataset"] = "multi_woz_v22"
 
         # ensure correct speaker shifts
         dialog = [examples["dialog"][0]]

@@ -205,7 +205,7 @@ class DialogAudioDM(pl.LightningDataModule):
         sessions = []
         for b in batch:
             waveforms.append(b["waveform"])
-            dset_names.append(b["dataset_name"])
+            dset_names.append(b["dataset"])
             sessions.append(b["session"])
 
             if "vad" in b:

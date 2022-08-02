@@ -34,7 +34,7 @@ def load_metawoz(split="train"):
     """
 
     def add_dataset_name(examples):
-        examples["dataset_name"] = "meta_woz"
+        examples["dataset"] = "meta_woz"
         return examples
 
     remove_metawoz = ["id", "user_id", "bot_id", "domain", "task_id"]

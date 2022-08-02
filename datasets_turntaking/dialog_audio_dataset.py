@@ -290,7 +290,7 @@ class DialogAudioDataset(Dataset):
         # dict to return
         ret = {
             "waveform": waveform,
-            "dataset_name": [b["dataset_name"]],
+            "dataset": [b["dataset"]],
             "session": [b["session"]],
         }
 
@@ -424,7 +424,7 @@ class DialogAudioDataset(Dataset):
         # dict to return
         ret = {
             "waveform": waveform,
-            "dataset_name": b["dataset_name"],
+            "dataset": b["dataset"],
             "session": b["session"],
         }
 

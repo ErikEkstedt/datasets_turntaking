@@ -2,5 +2,6 @@ datasets
 omegaconf
 sphfile
 pytorch-lightning
+torchaudio
 # librosa
 # AMFM-decompy

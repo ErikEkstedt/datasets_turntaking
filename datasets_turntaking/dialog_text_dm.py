@@ -8,13 +8,8 @@ from typing import Optional
 import torch
 from torch.utils.data import DataLoader
 import pytorch_lightning as pl
-from datasets import concatenate_datasets, load_from_disk
-
-from datasets_turntaking.dataset import (
-    format_to_utterances,
-    load_multiple_datasets,
-    refine_dialog,
-)
+from datasets import load_from_disk
+from datasets_turntaking.dataset import load_multiple_datasets
 
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
@@ -37,6 +32,7 @@ class ConversationalDM(pl.LightningDataModule):
         self,
         tokenizer,
         datasets=None,
+        columns=["dataset", "dialog"],  # features prior to tokenization
         savepath=CACHE_PATH,
         batch_size=2,
         max_length=256,
@@ -56,7 +52,7 @@ class ConversationalDM(pl.LightningDataModule):
 
         # `datasets` parameters
         self.load_from_cache_file = load_from_cache_file
-        self.num_proc = num_proc
+        self.num_proc = num_proc if num_proc is not None else cpu_count()
         self.include_dialog = include_dialog
 
         # Datasets
@@ -68,6 +64,10 @@ class ConversationalDM(pl.LightningDataModule):
                     dset in self.DATASETS
                 ), f"Must prepare dataset to be of correct format. Use {self.DATASETS}"
         self.datasets = datasets
+        self.columns = columns
+        self.remove_restarts = (
+            True  # removes restarts from spoken dialog data ("h- hello" -> "hello")
+        )
         self.datasets.sort()  # sort for consistency
         self.savepath = join(savepath, self.tokenizer.name_or_path)
         self.overwrite = overwrite
@@ -84,31 +84,12 @@ class ConversationalDM(pl.LightningDataModule):
                 return False
         return True
 
-    def encode(self, examples):
+    def encode_dataset(self, examples):
         """omit `attention_mask`"""
         t = self.tokenizer(examples["dialog"])
-        return {"input_ids": t["input_ids"], "speaker_ids": t["speaker_ids"]}
-
-    def encode_single(self, d):
-        utterances = format_to_utterances(d)
-        d["dialog"] = refine_dialog(utterances)
-        t = self.tokenizer(d["dialog"])
-        d["input_ids"] = t["input_ids"]
-        d["speaker_ids"] = t["speaker_ids"]
-        return d
-
-    def process_datasets(self, dset_list, split):
-        dsets = load_multiple_datasets(dset_list, split)
-        dataset = concatenate_datasets(dsets)
-        print("filter empty turns")
-        dataset = dataset.filter(self.filter_empty_turns)
-        dataset = dataset.map(
-            self.encode_single,
-            batched=False,
-            # load_from_cache_file=self.load_from_cache_file,
-            num_proc=self.num_proc,
-        )
-        return dataset
+        examples["input_ids"] = t["input_ids"]
+        examples["speaker_ids"] = t["speaker_ids"]
+        return examples
 
     def prepare_data(self):
         """Concatenates multiple datasets"""
@@ -127,13 +108,23 @@ class ConversationalDM(pl.LightningDataModule):
                 if self.overwrite and exists(split_path):
                     shutil.rmtree(split_path)
 
-                dsets = load_multiple_datasets(self.datasets, split)
-                dataset = concatenate_datasets(dsets)
-                print("filter empty turns")
+                dataset = load_multiple_datasets(
+                    self.datasets,
+                    split=split,
+                    columns=self.columns,
+                    remove_restarts=self.remove_restarts,
+                )
+
+                print("#" * 40)
+                print("Filter empty turns")
+                print("#" * 40)
                 dataset = dataset.filter(self.filter_empty_turns)
+                print("#" * 40)
+                print("TOKENIZE DATASET: ", self.tokenizer)
+                print("#" * 40)
                 dataset = dataset.map(
-                    self.encode_single,
-                    batched=False,
+                    self.encode_dataset,
+                    batched=True,
                     load_from_cache_file=self.load_from_cache_file,
                     num_proc=self.num_proc,
                 )
@@ -150,14 +141,19 @@ class ConversationalDM(pl.LightningDataModule):
             self.test_dset = load_from_disk(self.get_split_path("test"))
 
     def collate_fn(self, batch):
+        # TODO: yield to include the entire dialog and not just the first self.max_length tokens
         ret = self.tokenizer.pad(
             {"input_ids": [b["input_ids"][: self.max_length] for b in batch]}
         )
         ret["speaker_ids"] = self.tokenizer.pad(
             {"input_ids": [b["speaker_ids"][: self.max_length] for b in batch]}
         )["input_ids"]
+
         for k, v in ret.items():
             ret[k] = torch.tensor(v)
+
+        if "dataset" in batch[0]:
+            ret["dataset"] = [b["dataset"] for b in batch]
 
         if self.include_dialog:
             ret["dialog"] = [b["dialog"] for b in batch]
@@ -255,63 +251,25 @@ def main():
 if __name__ == "__main__":
 
     # Debugging
-    from datasets_turntaking.utils import load_waveform
+    # from datasets_turntaking.utils import load_waveform
     from turngpt.tokenizer import SpokenDialogTokenizer
 
     tokenizer = SpokenDialogTokenizer()
 
-    def encode_single(d):
-        utterances = format_to_utterances(d)
-        d["dialog"] = refine_dialog(utterances)
-        utts = [u["text"] for u in d["dialog"]]
-        t = tokenizer(utts)
-        d["input_ids"] = t["input_ids"]
-        d["speaker_ids"] = t["speaker_ids"]
-        return d
-
-    split = "validation"
-    # dsets = load_multiple_datasets(['switchboard'], split=split)
-    dsets = load_multiple_datasets(["switchboard"], split=split)
-    dataset = concatenate_datasets(dsets)
-    # d = dataset[0]
-    # utterances = format_to_utterances(d)
-    # d["dialog"] = refine_dialog(utterances)
-    # utts = [u['text'] for u in d['dialog']]
-    # t = tokenizer(utts)
-    # d["input_ids"] = t["input_ids"]
-    # d["speaker_ids"] = t["speaker_ids"]
-    # print("filter empty turns")
-    # dataset = dataset.filter(self.filter_empty_turns)
-    dataset = dataset.map(
-        encode_single,
-        batched=False,
-        # load_from_cache_file=self.load_from_cache_file,
-        num_proc=4,
+    dm = ConversationalDM(
+        tokenizer,
+        datasets=[
+            "switchboard",
+            "fisher",
+            "daily_dialog",
+            "curiosity_dialogs",
+            "meta_woz",
+        ],
+        batch_size=20,
     )
-    d = dataset[0]
-    print("d: ", list(d.keys()))
+    dm.prepare_data()
+    dm.setup()
 
-    d = dset[264]
-    print("d: ", list(d.keys()))
-    a = d["dialog"][0]
-    b = d["dialog"][1]
-    print(a["text"])
-
-    for tt in a["text"]:
-        print(tt)
-
-    a["text"]
-
-    x, sr = load_waveform(d["audio_path"])
-
-    for i, utt in enumerate(b["text"]):
-        if "[mn]" in utt:
-            print(i, utt)
-
-    i = 82
-    t = b["text"][i]
-    start = b["start"][i]
-    s = int(sr * (start))
-    d = int(sr * 5)
-    print(t)
-    sd.play(x[1, s : s + d], samplerate=sr)
+    batch = next(iter(dm.train_dataloader()))
+    print("batch: ", batch.keys())
+    print(batch["dataset"])

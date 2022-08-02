@@ -1,5 +1,7 @@
 from os.path import join
+from os import cpu_count
 from copy import deepcopy
+from typing import List
 from datasets import Value, Sequence
 from datasets import concatenate_datasets, load_dataset
 
@@ -63,30 +65,79 @@ BACKCHANNEL_MAP = {
 }
 
 
-def load_multiple_datasets(datasets, split, **kwargs):
+def encode_spoken_dsets(d):
+    """
+    Processes spoken datasets (fisher, swithcboard) to a similar format as other
+    conversational (daily_dialog, ...) written datasets.
+    """
+    utterances = format_to_utterances(d)
+    d["utterances"] = refine_dialog(utterances)
+    d["dialog"] = [u["text"] for u in d["utterances"]]
+    return d
+
+
+def load_spoken_datasets(
+    datasets, split, num_proc=cpu_count(), load_from_cache_file=True, **custom_kwargs
+) -> List:
     dsets = []
     for d in datasets:
         if d in ["fisher", "switchboard"]:
             dsets.append(
-                load_dataset(SCRIPT_PATHS[d], name="default", split=split, **kwargs)
+                load_dataset(
+                    SCRIPT_PATHS[d], name="default", split=split, **custom_kwargs
+                )
             )
-        elif d == "curiosity_dialogs":
-            dsets.append(load_curiosity_dialogs(split, **kwargs))
+
+    if len(dsets) < 1:
+        return []
+
+    dataset = concatenate_datasets(dsets)
+    dataset = dataset.map(
+        encode_spoken_dsets,
+        batched=False,
+        load_from_cache_file=load_from_cache_file,
+        num_proc=num_proc,
+    )
+    return [dataset]
+
+
+def load_multiple_datasets(datasets, split, columns=["dialog", "dataset"], **kwargs):
+    dsets = load_spoken_datasets(datasets, split)  # returns list
+    for d in datasets:
+        if d in ["fisher", "switchboard"]:
+            continue
+        if d == "curiosity_dialogs":
+            dsets.append(load_curiosity_dialogs(split))
         elif d == "daily_dialog":
-            dsets.append(load_daily_dialog(split, **kwargs))
+            dsets.append(load_daily_dialog(split))
         elif d == "multi_woz_v22":
-            dsets.append(load_multiwoz_v22(split, **kwargs))
+            dsets.append(load_multiwoz_v22(split))
         elif d == "meta_woz":
-            dsets.append(load_metawoz(split, **kwargs))
+            dsets.append(load_metawoz(split))
         elif d == "taskmaster1":
-            dsets.append(load_taskmaster1(split, **kwargs))
+            dsets.append(load_taskmaster1(split))
         elif d == "taskmaster2":
-            dsets.append(load_taskmaster2(split, **kwargs))
+            dsets.append(load_taskmaster2(split))
         elif d == "taskmaster3":
-            dsets.append(load_taskmaster3(split, **kwargs))
+            dsets.append(load_taskmaster3(split))
         else:
             raise NotImplementedError(f"Not installed: {d}")
-    return dsets
+
+    return concatenate_dsets(dsets, columns=columns)
+
+
+def concatenate_dsets(dsets, columns=["dialog", "dataset"]):
+    """
+    Concatenate and simplify
+    """
+    dset = concatenate_datasets(dsets)
+    remove = []
+    for c in dset.column_names:
+        if c not in columns:
+            remove.append(c)
+    if len(remove) > 0:
+        dset = dset.remove_columns(remove)
+    return dset
 
 
 def format_to_utterances(d):
@@ -205,33 +256,17 @@ if __name__ == "__main__":
     # dsets = load_multiple_datasets(
     #     ["fisher", "switchboard"], split=split, remove_restarts=True
     # )
-    dsets = load_multiple_datasets(["switchboard"], split=split, remove_restarts=True)
-    # dsets = load_multiple_datasets(["switchboard"], split=split)
-    def encode(d):
-        utterances = format_to_utterances(d)
-        d["dialog"] = refine_dialog(utterances)
-        return d
-
-    dataset = concatenate_datasets(dsets)
-    dataset = dataset.map(
-        encode,
-        batched=False,
-        # load_from_cache_file=self.load_from_cache_file,
-        num_proc=4,
+    dset = load_multiple_datasets(
+        datasets=[
+            "switchboard",
+            "fisher",
+            "daily_dialog",
+            "curiosity_dialogs",
+            "multi_woz_v22",
+        ],
+        split=split,
+        columns=["dialog", "dataset"],
+        remove_restarts=True,
     )
-    d = dataset[1]
 
-    for u in d["dialog"]:
-        print(
-            u["speaker"],
-            "(",
-            round(u["start"], 2),
-            round(u["end"], 2),
-            ") ->",
-            u["text"],
-        )
-        # if len(u["within"]) > 0:
-        #     print("   WI ->", u["within"], u["within_start"], u["within_end"])
-        # if len(u["backchannel"]) > 0:
-        #     print("   BC ->", u["backchannel"], u["backchannel_start"], u["backchannel_end"])
-        input()
+    d = dset[-1]

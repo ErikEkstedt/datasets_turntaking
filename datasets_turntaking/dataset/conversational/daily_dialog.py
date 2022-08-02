@@ -1,26 +1,21 @@
 from datasets import load_dataset
 
 
-def load_daily_dialog(split="train"):
-    """
-    splits = ['train', 'validation', 'test']
-    already contains correct `dialog` field
-
-    and got no speaker-id information? Assume that utterances changes speaker every time.
-    """
-
-    def add_dataset_name(examples):
-        examples["dataset_name"] = "daily_dialog"
-        return examples
-
+def load_daily_dialog(split="train", add_dataset_name=True):
     if split == "val":
         split = "validation"
 
-    remove_daily_dialog = ["act", "emotion"]
-
     dset = load_dataset("daily_dialog", split=split)
-    dset = dset.remove_columns(remove_daily_dialog)
-    dset = dset.map(add_dataset_name)
+
+    # Add dataset name
+    # remove_daily_dialog = ["act", "emotion"]
+    def _add_dataset_name(examples):
+        examples["dataset"] = "daily_dialog"
+        return examples
+
+    if add_dataset_name:
+        dset = dset.map(_add_dataset_name)
+
     return dset
 
 

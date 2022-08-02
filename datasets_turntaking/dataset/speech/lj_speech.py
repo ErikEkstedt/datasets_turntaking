@@ -5,7 +5,7 @@ def load_lj_speech(split="train"):
     """ """
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "lj_speech"
+        examples["dataset"] = "lj_speech"
         return examples
 
     if split == "val":

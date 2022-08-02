@@ -9,14 +9,14 @@ information such as *entities*, *intents*, etc.
 
 The simple combined dataset simply uses two `column_names`, the **dialog**
 field which consists of a list of string representing the dialog, and
-**dataset_name** which is simply a string with the corresponding dataset name.
+**dataset** which is simply a string with the corresponding dataset name.
 All other fields are omitted `dataset.remove_columns([dataset specific list of
 column names to remove])`.
 
 
 
 One desiderata is that the speaker changes over consecutive turns so we process
-the dataset using `dataset.map`, with a function that inserts the **dataset_name**
+the dataset using `dataset.map`, with a function that inserts the **dataset**
 and handles consecutive turns:
 
 ```python
@@ -33,7 +33,7 @@ def get_every_other_speaker_dialog(dialog):
     return new_dialog
 
 def process_and_add_name(examples):
-    examples["dataset_name"] = "taskmaster2"
+    examples["dataset"] = "taskmaster2"
     examples["dialog"] = get_every_other_speaker_dialog(examples["dialog"])
     return examples
 ```
@@ -64,7 +64,7 @@ def load_curiosity_dialogs(split="train"):
     """
 
     def add_dataset_name(examples):
-        examples["dataset_name"] = "curiosity_dialogs"
+        examples["dataset"] = "curiosity_dialogs"
         return examples
 
     remove_curiosity = [ "messages.liked", ...,  "annotated"]

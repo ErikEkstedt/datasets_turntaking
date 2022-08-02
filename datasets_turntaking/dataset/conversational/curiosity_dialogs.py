@@ -7,7 +7,7 @@ def load_curiosity_dialogs(split="train"):
     """
 
     def add_dataset_name(examples):
-        examples["dataset_name"] = "curiosity_dialogs"
+        examples["dataset"] = "curiosity_dialogs"
 
         # ensure consecutive speaker change
         dialog = [examples["dialog"][0]]

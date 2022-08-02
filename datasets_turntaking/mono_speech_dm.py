@@ -67,7 +67,7 @@ def get_collate(features=["waveform", "text", "f0", "vad"], sample_rate=8000):
         ret = {
             "id": [],
             "file": [],
-            "dataset_name": [],
+            "dataset": [],
         }
         if "waveform" in features:
             ret["waveform"] = []
@@ -84,7 +84,7 @@ def get_collate(features=["waveform", "text", "f0", "vad"], sample_rate=8000):
         for b in batch:
             ret["id"].append(b["id"])
             ret["file"].append(b["file"])
-            ret["dataset_name"].append(b["dataset_name"])
+            ret["dataset"].append(b["dataset"])
 
             if "waveform" in features:
                 x, _ = load_waveform(b["file"], sample_rate=sample_rate)
@@ -225,7 +225,7 @@ class SpeechAudioModule(pl.LightningDataModule):
         ret = {
             "id": [],
             "file": [],
-            "dataset_name": [],
+            "dataset": [],
             "waveform": [],
             "n_samples": [],
         }
@@ -241,7 +241,7 @@ class SpeechAudioModule(pl.LightningDataModule):
         for b in batch:
             ret["id"].append(b["id"])
             ret["file"].append(b["file"])
-            ret["dataset_name"].append(b["dataset_name"])
+            ret["dataset"].append(b["dataset_name"])
 
             x, _ = load_waveform(b["file"], sample_rate=self.sample_rate)
             clip_duration = x.shape[-1] / self.sample_rate

@@ -11,7 +11,7 @@ def load_vctk(split):
         split = "validation"
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "vctk"
+        examples["dataset"] = "vctk"
         return examples
 
     DATASET_SCRIPT = join(repo_root(), "datasets_turntaking/speech/vctk.py")
