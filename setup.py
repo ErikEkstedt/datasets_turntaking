@@ -9,5 +9,5 @@ setup(
     author="erikekst",
     author_email="erikekst@kth.se",
     url="https://github.com/ErikEkstedt/datasets_turntaking",
-    packages=["datasets_turntaking"],
+    package_dir={"datasets_turntaking": "datasets_turntaking"},
 )
