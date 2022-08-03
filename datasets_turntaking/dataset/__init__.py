@@ -101,6 +101,20 @@ def load_spoken_datasets(
     return [dataset]
 
 
+def concatenate_dsets(dsets, columns=["dialog", "dataset"]):
+    """
+    Concatenate and simplify
+    """
+    dset = concatenate_datasets(dsets)
+    remove = []
+    for c in dset.column_names:
+        if c not in columns:
+            remove.append(c)
+    if len(remove) > 0:
+        dset = dset.remove_columns(remove)
+    return dset
+
+
 def load_multiple_datasets(datasets, split, columns=["dialog", "dataset"], **kwargs):
     dsets = load_spoken_datasets(datasets, split)  # returns list
     for d in datasets:
@@ -124,20 +138,6 @@ def load_multiple_datasets(datasets, split, columns=["dialog", "dataset"], **kwa
             raise NotImplementedError(f"Not installed: {d}")
 
     return concatenate_dsets(dsets, columns=columns)
-
-
-def concatenate_dsets(dsets, columns=["dialog", "dataset"]):
-    """
-    Concatenate and simplify
-    """
-    dset = concatenate_datasets(dsets)
-    remove = []
-    for c in dset.column_names:
-        if c not in columns:
-            remove.append(c)
-    if len(remove) > 0:
-        dset = dset.remove_columns(remove)
-    return dset
 
 
 def format_to_utterances(d):
