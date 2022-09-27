@@ -265,6 +265,11 @@ class DialogAudioDM(pl.LightningDataModule):
 
     def __repr__(self):
         s = "DialogAudioDM"
+        s += f"\n\tdatasets: {self.datasets}"
+        s += f"\n\tduration: {self.audio_duration}"
+        s += f"\n\toverlap: {self.audio_overlap}"
+        s += f"\n\tvad_hz: {self.vad_hz}"
+        s += f"\n\tvad_history: {self.vad_history}"
         s += f"\n\tbatch_size: {self.batch_size}"
         s += f"\n\tpin_memory: {self.pin_memory}"
         s += f"\n\tnum_workers: {self.num_workers}"
@@ -329,7 +334,7 @@ if __name__ == "__main__":
     train_files = None
     val_files = None
 
-    data_conf["dataset"]["vad_hz"] = 100
+    data_conf["dataset"]["vad_hz"] = 50
     dm = DialogAudioDM(
         datasets=["switchboard"],
         type=data_conf["dataset"]["type"],
