@@ -21,7 +21,7 @@ def load_switchboard(split="train", **kwargs):
     #
     #     return examples
 
-    dset = load_dataset(DATASET_SCRIPT, name="default", **kwargs)
+    dset = load_dataset(DATASET_SCRIPT, name="default", split=split, **kwargs)
     # dset = dset.remove_columns(["speaker_id", "chapter_id"])
     # dset = dset.map(process_and_add_name)
     return dset

@@ -13,6 +13,7 @@ from datasets_turntaking.dataset import load_multiple_datasets
 
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
+SPOKEN_DATASETS = ["fisher", "switchboard"]
 POSSIBLE_DATASETS = [
     "curiosity_dialogs",
     "daily_dialog",
@@ -24,6 +25,41 @@ POSSIBLE_DATASETS = [
     "switchboard",
     "fisher",
 ]
+
+
+def sort_and_combine_utterances(dialog):
+    """
+    Used in spoken datasets [switchboard, fisher]
+
+
+    1. Collect all utterances from both speakers in a single list.
+    2. Sort list by starting time.
+    3. Combine adjacent utterances from the same speaker.
+    4. Remove time information
+    """
+
+    # 1 and 2
+    all_utterances_sorted = []
+    for speaker, cc in enumerate(dialog):
+        for t, s, e in zip(cc["text"], cc["start"], cc["end"]):
+            all_utterances_sorted.append(
+                {"start": s, "end": e, "text": t, "speaker": speaker}
+            )
+    all_utterances_sorted.sort(key=lambda x: x["start"])
+
+    # 3
+    combined_utterances = [all_utterances_sorted[0]]
+    for utt in all_utterances_sorted[1:]:
+        if utt["speaker"] == combined_utterances[-1]["speaker"]:
+            combined_utterances[-1]["text"] += " " + utt["text"]
+            combined_utterances[-1]["end"] = utt["end"]
+        else:
+            combined_utterances.append(utt)
+
+    # 4
+    utterances = [t["text"] for t in combined_utterances]
+
+    return utterances
 
 
 class ConversationalDM(pl.LightningDataModule):
@@ -87,6 +123,9 @@ class ConversationalDM(pl.LightningDataModule):
 
     def encode_dataset(self, examples):
         """omit `attention_mask`"""
+        if examples["dataset"] in SPOKEN_DATASETS:
+            examples["dialog"] = sort_and_combine_utterances(examples["dialog"])
+
         t = self.tokenizer(examples["dialog"])
         examples["input_ids"] = t["input_ids"]
         examples["speaker_ids"] = t["speaker_ids"]
@@ -96,6 +135,8 @@ class ConversationalDM(pl.LightningDataModule):
         """
         Tokenizes the dataset and organize to appropriate lengths (`self.max_length`)
         """
+        if examples["dataset"] in SPOKEN_DATASETS:
+            examples["dialog"] = sort_and_combine_utterances(examples["dialog"])
         t = self.tokenizer(examples["dialog"])
         inp_ids = t["input_ids"]
         sp_ids = t["speaker_ids"]
@@ -169,8 +210,11 @@ class ConversationalDM(pl.LightningDataModule):
         if stage == "fit" or stage is None:
             self.train_dset = load_from_disk(self.get_dset_path("train"))
             self.val_dset = load_from_disk(self.get_dset_path("validation"))
-
-        if stage == "test":
+        elif stage == "all":
+            self.train_dset = load_from_disk(self.get_dset_path("train"))
+            self.val_dset = load_from_disk(self.get_dset_path("validation"))
+            self.test_dset = load_from_disk(self.get_dset_path("test"))
+        elif stage == "test":
             self.test_dset = load_from_disk(self.get_dset_path("test"))
 
     def collate_fn(self, batch):
@@ -283,13 +327,7 @@ if __name__ == "__main__":
 
     dm = ConversationalDM(
         tokenizer,
-        datasets=[
-            "switchboard",
-            "fisher",
-            "daily_dialog",
-            "curiosity_dialogs",
-            "meta_woz",
-        ],
+        datasets=["switchboard", "fisher"],
         max_length=256,
         # overwrite=True,
         batch_size=20,
@@ -297,7 +335,10 @@ if __name__ == "__main__":
     dm.prepare_data()
     dm.setup()
 
-    d = dm.train_dset[0]
+    d = dm.train_dset[1]
+
+    t = tokenizer.decode(d["input_ids"])
+
     for k, v in d.items():
         if isinstance(v, torch.Tensor):
             print(f"{k}: {tuple(v.shape)}")
