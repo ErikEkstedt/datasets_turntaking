@@ -38,3 +38,5 @@ ipython_config.py
 
 # Custom
 pyrightconfig.json
+
+dev.py

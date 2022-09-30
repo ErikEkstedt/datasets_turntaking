@@ -14,10 +14,10 @@ from torch.utils.data import DataLoader
 import pytorch_lightning as pl
 
 from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
-from datasets_turntaking.dataset.callhome import load_callhome
-from datasets_turntaking.dataset.fisher import load_fisher
-from datasets_turntaking.dataset.switchboard import load_switchboard
-from datasets_turntaking.dataset.vacation_interview import load_vacation_interview
+from datasets_turntaking.dataset.spoken_dialog import load_callhome
+from datasets_turntaking.dataset.spoken_dialog import load_fisher
+from datasets_turntaking.dataset.spoken_dialog import load_switchboard
+from datasets_turntaking.dataset.spoken_dialog import load_vacation_interview
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 
 
@@ -337,10 +337,9 @@ if __name__ == "__main__":
     # val_files = join(folds, "1_fold_val.txt")
     train_files = None
     val_files = None
-
     data_conf["dataset"]["vad_hz"] = 50
     dm = DialogAudioDM(
-        datasets=["switchboard"],
+        datasets=["switchboard", "fisher"],
         type=data_conf["dataset"]["type"],
         sample_rate=data_conf["dataset"]["sample_rate"],
         audio_mono=data_conf["dataset"]["audio_mono"],

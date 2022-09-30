@@ -11,12 +11,12 @@ from torch.utils.data import DataLoader
 from datasets import concatenate_datasets, load_from_disk
 import pytorch_lightning as pl
 
-from datasets_turntaking.dataset.conversational.utils import load_multiple_datasets
+from datasets_turntaking.dataset.written_dialog.utils import load_multiple_datasets
 
 CACHE_PATH = join(expanduser("~"), ".cache/datasets_turntaking/conversational")
 
 
-class ConversationalDM(pl.LightningDataModule):
+class DialogTextDM(pl.LightningDataModule):
     DATASETS = [
         "curiosity_dialogs",
         "daily_dialog",
@@ -173,7 +173,7 @@ class ConversationalDM(pl.LightningDataModule):
 
         n_cpus = cpu_count()
         parser.add_argument(
-            "--datasets", type=str, nargs="+", default=ConversationalDM.DATASETS
+            "--datasets", type=str, nargs="+", default=DialogTextDM.DATASETS
         )
         parser.add_argument("--savepath", default=None, type=str)
         parser.add_argument("--overwrite", default=False, type=bool)
@@ -198,14 +198,14 @@ if __name__ == "__main__":
     from turngpt.tokenizer import SpokenDialogTokenizer
 
     parser = ArgumentParser()
-    parser = ConversationalDM.add_data_specific_args(parser)
+    parser = DialogTextDM.add_data_specific_args(parser)
     args = parser.parse_args()
     for k, v in vars(args).items():
         print(f"{k}: {v}")
 
     tokenizer = SpokenDialogTokenizer()
 
-    dm = ConversationalDM(
+    dm = DialogTextDM(
         tokenizer,
         batch_size=args.batch_size,
         max_length=args.max_length,
