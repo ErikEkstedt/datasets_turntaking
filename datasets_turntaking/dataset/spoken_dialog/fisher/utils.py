@@ -1,5 +1,6 @@
 import torch
 from os.path import join
+import re
 from datasets_turntaking.utils import read_txt
 
 
@@ -7,6 +8,64 @@ SPEAKER2CHANNEL = {"A": 0, "B": 1}
 
 
 # TODO:Specific cleaning of text?
+def fisher_regexp(s, remove_restarts=False):
+    """
+    See information about annotations at:
+    * https://catalog.ldc.upenn.edu/docs/LDC2004T19/fe_03_readme.txt
+    Regexp
+    ------
+    * Special annotations:  ["[laughter]", "[noise]", "[lipsmack]", "[sigh]"]
+    * double paranthesis "((...))" was not heard by the annotator
+      and can be empty but if not empty the annotator made their
+      best attempt of transcribing what was said.
+    * What's "[mn]" ? (can't find source?)
+        * Inaudible
+        * seems to be backchannel or laughter
+        * oh/uh-huh/mhm/hehe
+    * Names/accronyms (can't find source?)
+        * t._v. = TV
+        * m._t._v. = MTV
+    """
+
+    # Noise
+    s = re.sub(r"\[noise\]", "", s)
+    # laughter
+    s = re.sub(r"\[laughter\]", "", s)
+    # lipsmack
+    s = re.sub(r"\[lipsmack\]", "", s)
+    # sigh
+    s = re.sub(r"\[sigh\]", "", s)
+    # [mn] inaubible?
+    s = re.sub(r"\[mn\]", "", s)
+
+    # clean restarts
+    # if remove_restarts=False "h-" -> "h"
+    # if remove_restarts=True  "h-" -> ""
+    if remove_restarts:
+        s = re.sub(r"(\w+)-\s", " ", s)
+        s = re.sub(r"(\w+)-$", r"", s)
+    else:
+        s = re.sub(r"(\w+)-\s", r"\1 ", s)
+        s = re.sub(r"(\w+)-$", r"\1", s)
+
+    # doubble paranthesis (DP) with included words
+    # sometimes there is DP inside another DP
+    s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
+    s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
+
+    # empty doubble paranthesis
+    s = re.sub(r"\(\(\s*\)\)", "", s)
+
+    # Names/accronyms
+    s = re.sub(r"\.\_", "", s)
+
+    # remove punctuation
+    # (not included in annotations but artifacts from above)
+    s = re.sub(r"\.", "", s)
+
+    # remove double spacing on last
+    s = re.sub(r"\s\s+", " ", s)
+    return s.strip()  # remove whitespace start/end
 
 
 def get_audio_path(nnn, root, ext=".sph"):
@@ -31,7 +90,7 @@ def get_paths(nnn, root, ext=".sph"):
     return transcript, audio_path
 
 
-def load_transcript(path):
+def load_transcript(path, apply_regexp=True, remove_restarts=False):
     """
     Load the speakers as appropriate channels
     """
@@ -51,6 +110,14 @@ def load_transcript(path):
         speaker = split_row[2].replace(":", "")
         channel = SPEAKER2CHANNEL[speaker]
         text = " ".join(split_row[3:])
+
+        if apply_regexp:
+            text = fisher_regexp(text, remove_restarts=remove_restarts)
+
+        # Omit empty
+        if len(text) == 0:
+            continue
+
         anno[channel].append({"start": s, "end": e, "text": text})
     return anno
 
@@ -67,7 +134,6 @@ def extract_vad_list(anno):
 def get_text_context(dialog, end, start=0):
     """
     Extract dialog context with utterances starting/ending after/before `start`/`end`
-
     This is on an utterance level and so will omit longer utterances that end after `end`, even though
     a lot of words may be included in [start, end].
     """
@@ -92,7 +158,6 @@ def get_text_context(dialog, end, start=0):
 if __name__ == "__main__":
 
     root = "/home/erik/projects/data/Fisher"
-
     nnn = "00001"
     trans_path, audio_path = get_paths(nnn, root, ext=".sph")
 
@@ -103,3 +168,19 @@ if __name__ == "__main__":
     p1 = get_audio_path("00001", root)
     p2 = get_audio_path("05100", root)
     p3 = get_audio_path("05300", root)
+
+    s = "hello [noise] are [laughter] (( uh-huh )) you (( watching tv on )) m._t._v. (( oh that's not old ))"
+    s = "h- he- hello uh-huh ver-"
+    # s = "hello [noise] how [laughter] are (( ))"
+    # s = re.sub(r"\(\(((\s\w*)+)\)\)", r"\1", s)
+    # s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
+    # print(s)
+    s = fisher_regexp(s, True)
+    print(s)
+
+    # s = "cette plus facile (( au senegal aussi parce que je pouvais ))"
+    s = "'(( demander beaucoup (( )) parce que ))'"
+    # s = "'(( demander beaucoup (( bla )) parce que ))'"
+    # s = 'demander beaucoup (( parce que ))'
+    d = fisher_regexp(s)
+    print(d)

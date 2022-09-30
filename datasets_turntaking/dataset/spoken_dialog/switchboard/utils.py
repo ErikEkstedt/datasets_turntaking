@@ -9,22 +9,75 @@ OmitText = [
     "[vocalized-noise]",
 ]
 
+
+def swb_regexp(s, remove_restarts=False):
+    """
+    Switchboard annotation specific regexp.
+    See:
+        - `datasets_turntaking/features/dataset/switchboard.md`
+        - https://www.isip.piconepress.com/projects/switchboard/doc/transcription_guidelines/transcription_guidelines.pdf
+    """
+    # Noise
+    s = re.sub(r"\[noise\]", "", s)
+    s = re.sub(r"\[vocalized-noise\]", "", s)
+
+    # laughter
+    s = re.sub(r"\[laughter\]", "", s)
+    # laughing and speech e.g. [laughter-yeah] -> yeah
+    s = re.sub(r"\[laughter-(\w*)\]", r"\1", s)
+    s = re.sub(r"\[laughter-(\w*\'*\w*)\]", r"\1", s)
+
+    # Partial words: w[ent] -> went
+    s = re.sub(r"(\w+)\[(\w*\'*\w*)\]", r"\1\2", s)
+    # Partial words: -[th]at -> that
+    s = re.sub(r"-\[(\w*\'*\w*)\](\w+)", r"\1\2", s)
+
+    # clean restarts
+    # if remove_restarts=False "h-" -> "h"
+    # if remove_restarts=True  "h-" -> ""
+    if remove_restarts:
+        s = re.sub(r"(\w+)-\s", " ", s)
+        s = re.sub(r"(\w+)-$", r"", s)
+    else:
+        s = re.sub(r"(\w+)-\s", r"\1 ", s)
+        s = re.sub(r"(\w+)-$", r"\1", s)
+
+    # clean restarts
+    # if remove_restarts=False "h-" -> "h"
+    # if remove_restarts=True  "h-" -> ""
+    if remove_restarts:
+        s = re.sub(r"(\w+)-\s", "", s)
+        s = re.sub(r"(\w+)-$", r"\1", s)
+    else:
+        s = re.sub(r"(\w+)-\s", r" ", s)
+        s = re.sub(r"(\w+)-$", r"", s)
+
+    # Pronounciation variants
+    s = re.sub(r"(\w+)\_\d", r"\1", s)
+
+    # Mispronounciation [splace/space] -> space
+    s = re.sub(r"\[\w+\/(\w+)\]", r"\1", s)
+
+    # Coinage. remove curly brackets... keep word
+    s = re.sub(r"\{(\w*)\}", r"\1", s)
+
+    # remove double spacing on last
+    s = re.sub(r"\s\s+", " ", s)
+    return s.strip()  # remove whitespace start/end
+
+
 # Only used once, json file is included in repo
 def extract_audio_mapping(audio_root):
     """
     Used to create `relative_audio_path.json`.
-
     The audio files requires manual download and the extracted files are
     organized in a "non-straight-forward" manner. This function maps the
     session ids to their relative audio_path.
-
     This should only be run once and the mapping should be "shipped" with the
     dataset. For now it is included in the git-repo but should be downloaded
     along with the transcripts.
-
     Then given the path to the audio-root (extracted audio files) the audio
     path is reconstructed.
-
     (I have changed the format from .sph -> .wav)
     ```
       AUDIO_ROOT
@@ -42,14 +95,12 @@ def extract_audio_mapping(audio_root):
        └──  data
             └-- ...
     ```
-
     ```python
     # Construct relative-audio-path-mappings:
     audio_root = "/Path/To/Extracted/Audio"
     map = extract_audio_mapping(audio_root)
     write_json(map, "swb_session_to_audio_map.json")
     ```
-
     RETURN:
         map:    dict, i.e. map['3002'] -> 'swb1_d1/data/sw03002'
     """
@@ -66,48 +117,6 @@ def extract_audio_mapping(audio_root):
                     f_no_ext = re.sub(r"^(.*)\.\w*", r"\1", f)
                     map[session] = join(rel_path, f_no_ext)
     return map
-
-
-def swb_regexp(s):
-    """
-    Switchboard annotation specific regexp.
-
-    See:
-        - `datasets_turntaking/features/dataset/switchboard.md`
-        - https://www.isip.piconepress.com/projects/switchboard/doc/transcription_guidelines/transcription_guidelines.pdf
-
-    """
-    # Noise
-    s = re.sub(r"\[noise\]", "", s)
-    s = re.sub(r"\[vocalized-noise\]", "", s)
-
-    # laughter
-    s = re.sub(r"\[laughter\]", "", s)
-    # laughing and speech e.g. [laughter-yeah] -> yeah
-    s = re.sub(r"\[laughter-(\w*)\]", r"\1", s)
-    s = re.sub(r"\[laughter-(\w*\'*\w*)\]", r"\1", s)
-
-    # Partial words: w[ent] -> went
-    s = re.sub(r"(\w+)\[(\w*\'*\w*)\]", r"\1\2", s)
-    # Partial words: -[th]at -> that
-    s = re.sub(r"-\[(\w*\'*\w*)\](\w+)", r"\1\2", s)
-
-    # restarts
-    s = re.sub(r"(\w+)-\s", r"\1 ", s)
-    s = re.sub(r"(\w+)-$", r"\1", s)
-
-    # Pronounciation variants
-    s = re.sub(r"(\w+)\_\d", r"\1", s)
-
-    # Mispronounciation [splace/space] -> space
-    s = re.sub(r"\[\w+\/(\w+)\]", r"\1", s)
-
-    # Coinage. remove curly brackets... keep word
-    s = re.sub(r"\{(\w*)\}", r"\1", s)
-
-    # remove double spacing on last
-    s = re.sub(r"\s\s+", " ", s)
-    return s.strip()  # remove whitespace start/end
 
 
 def extract_vad_list(anno):
@@ -175,7 +184,7 @@ def extract_word_level_annotations(session, speaker, session_dir, apply_regexp=T
 
 
 def combine_speaker_utterance_and_words(
-    session, speaker, session_dir, apply_regexp=True
+    session, speaker, session_dir, apply_regexp=True, remove_restarts=False
 ):
     """Combines word- and utterance-level annotations"""
     # Read word-level annotation and format appropriately
@@ -203,7 +212,7 @@ def combine_speaker_utterance_and_words(
 
             words = " ".join(words)
             if apply_regexp:
-                words = swb_regexp(words)
+                words = swb_regexp(words, remove_restarts=remove_restarts)
 
             utterances.append(
                 {
@@ -216,7 +225,7 @@ def combine_speaker_utterance_and_words(
     return utterances
 
 
-def extract_dialog(session, session_dir, apply_regexp=True):
+def load_transcript(session, session_dir, apply_regexp=True, remove_restarts=False):
     """Extract the annotated dialogs based on config `name`"""
     # Config settings
 
@@ -226,6 +235,7 @@ def extract_dialog(session, session_dir, apply_regexp=True):
         speaker="A",
         session_dir=session_dir,
         apply_regexp=apply_regexp,
+        remove_restarts=remove_restarts,
     )
 
     # Speaker B: original name in annotations
@@ -234,6 +244,7 @@ def extract_dialog(session, session_dir, apply_regexp=True):
         speaker="B",
         session_dir=session_dir,
         apply_regexp=apply_regexp,
+        remove_restarts=remove_restarts,
     )
     return [a_utterances, b_utterances]
 
@@ -264,5 +275,5 @@ if __name__ == "__main__":
     session = str(session)
     session_dir = join(extracted_path, "swb_ms98_transcriptions", session[:2], session)
     print(listdir(session_dir))
-    dialog = extract_dialog(session, session_dir)
+    dialog = load_transcript(session, session_dir)
     vad = extract_vad_list_from_words(dialog)

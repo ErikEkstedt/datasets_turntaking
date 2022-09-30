@@ -1,32 +1,5 @@
 from copy import deepcopy
-from datasets import concatenate_datasets, load_dataset
-from datasets import Value, Sequence
-from typing import List
-from os import cpu_count
 
-from datasets_turntaking.utils import repo_root
-
-ROOT = repo_root()
-SCRIPT_PATHS = {
-    "switchboard": join(ROOT, "datasets_turntaking/dataset/switchboard/switchboard.py"),
-    "fisher": join(ROOT, "datasets_turntaking/dataset/fisher/fisher.py"),
-}
-
-DIALOG_AUDIO_FEATURES = {
-    "dataset": Value("string"),
-    "session": Value("string"),
-    "audio_path": Value("string"),
-    "vad": [[Sequence(Value("float"))]],
-    "dialog": [
-        Sequence(
-            {
-                "start": Value("float"),
-                "end": Value("float"),
-                "text": Value("string"),
-            }
-        )
-    ],
-}
 
 BACKCHANNEL_CANDIDATES = [
     "yeah",
@@ -55,7 +28,7 @@ BACKCHANNEL_MAP = {
 }
 
 
-def encode_spoken_dsets(d):
+def format_spoken_dialogs(d):
     """
     Processes spoken datasets (fisher, swithcboard) to a similar format as other
     conversational (daily_dialog, ...) written datasets.
@@ -64,31 +37,6 @@ def encode_spoken_dsets(d):
     d["utterances"] = refine_dialog(utterances)
     d["dialog"] = [u["text"] for u in d["utterances"]]
     return d
-
-
-def load_spoken_datasets(
-    datasets, split, num_proc=cpu_count(), load_from_cache_file=True, **custom_kwargs
-) -> List:
-    dsets = []
-    for d in datasets:
-        if d in ["fisher", "switchboard"]:
-            dsets.append(
-                load_dataset(
-                    SCRIPT_PATHS[d], name="default", split=split, **custom_kwargs
-                )
-            )
-
-    if len(dsets) < 1:
-        return []
-
-    dataset = concatenate_datasets(dsets)
-    dataset = dataset.map(
-        encode_spoken_dsets,
-        batched=False,
-        load_from_cache_file=load_from_cache_file,
-        num_proc=num_proc,
-    )
-    return [dataset]
 
 
 def format_to_utterances(d):

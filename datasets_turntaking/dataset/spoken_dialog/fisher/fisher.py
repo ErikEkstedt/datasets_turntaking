@@ -3,6 +3,7 @@ from datasets import Value, Sequence
 from typing import List
 from os.path import expanduser, join
 from .utils import extract_vad_list, get_paths, load_transcript
+from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 
 logger = datasets.logging.get_logger(__name__)
 
@@ -19,41 +20,26 @@ of transcripts, Fisher English Training Speech Part 1, Transcripts
 """
 
 
-# WARNING: very specific
-DEFAULT_DATA_PATH = join(expanduser("~"), "projects/data/Fisher")
-
 TOTAL_FILES = 5850
-FEATURES = {
-    "session": Value("string"),
-    "audio_path": Value("string"),
-    "vad": [
-        [Sequence(Value("float"))],
-    ],
-    "dialog": [
-        Sequence(
-            {
-                "start": Value("float"),
-                "end": Value("float"),
-                "text": Value("string"),
-            }
-        )
-    ],
-}
 
 
 class FisherConfig(datasets.BuilderConfig):
     def __init__(
         self,
-        root,
+        root=join(expanduser("~"), "projects/data/Fisher"),
         train_sessions=[str(i) for i in range(1, 5100)],
         val_sessions=[str(i) for i in range(5100, 5500)],
         test_sessions=[str(i) for i in range(5500, TOTAL_FILES + 1)],
+        apply_regexp=True,
+        remove_restarts=False,  # "h-" -> "" if True
         ext=".wav",
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.root = root
         self.ext = ext
+        self.apply_regexp = apply_regexp
+        self.remove_restarts = remove_restarts
         self.train_sessions = train_sessions
         self.val_sessions = val_sessions
         self.test_sessions = test_sessions
@@ -64,7 +50,6 @@ class Fisher(datasets.GeneratorBasedBuilder):
     DEFAULT_CONFIG_NAME = "default"
     BUILDER_CONFIGS = [
         FisherConfig(
-            root=DEFAULT_DATA_PATH,
             name="default",
             description="Fisher speech dataset",
         )
@@ -75,7 +60,7 @@ class Fisher(datasets.GeneratorBasedBuilder):
             description=_DESCRIPTION,
             homepage=_HOMEPAGE,
             citation=_CITATION,
-            features=datasets.Features(FEATURES),
+            features=datasets.Features(DIALOG_AUDIO_FEATURES),
             supervised_keys=None,
         )
 
@@ -101,13 +86,18 @@ class Fisher(datasets.GeneratorBasedBuilder):
             trans_path, audio_path = get_paths(
                 session, self.config.root, ext=self.config.ext
             )
-            anno = load_transcript(trans_path)
-            vad = extract_vad_list(anno)
+            dialog = load_transcript(
+                trans_path,
+                apply_regexp=self.config.apply_regexp,
+                remove_restarts=self.config.remove_restarts,
+            )
+            vad = extract_vad_list(dialog)
             yield f"{session}", {
                 "session": session,
+                "dataset": "fisher",
                 "audio_path": audio_path,
                 "vad": vad,
-                "dialog": anno,
+                "dialog": dialog,
             }
 
     def _generate_examples(self, sessions):

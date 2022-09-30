@@ -1,54 +1,17 @@
 from os import cpu_count, environ
+from os.path import join
+from torch.utils.data import DataLoader
+from typing import Optional, Dict
+import pytorch_lightning as pl
+import torch
 
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
 environ["DATASETS_VERBOSITY"] = "error"
 
-from os.path import join
-from typing import Optional, Dict
-from datasets import concatenate_datasets
-
-
-import torch
-from torch.utils.data import DataLoader
-import pytorch_lightning as pl
-
 from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
-from datasets_turntaking.dataset.spoken_dialog import load_callhome
-from datasets_turntaking.dataset.spoken_dialog import load_fisher
-from datasets_turntaking.dataset.spoken_dialog import load_switchboard
-from datasets_turntaking.dataset.spoken_dialog import load_vacation_interview
+from datasets_turntaking.dataset.spoken_dialog import load_spoken_dataset
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
-
-
-def get_dialog_audio_datasets(
-    datasets, split, train_files=None, val_files=None, test_files=None
-):
-    """
-    Load multiple dataset (of Huggingface `datasets` type) and concatenate to
-    a single dataset.
-    """
-    dsets = []
-    for d in datasets:
-        if d == "switchboard":
-            dsets.append(
-                load_switchboard(
-                    split=split,
-                    train_files=train_files,
-                    val_files=val_files,
-                    test_files=test_files,
-                )
-            )
-        elif d == "fisher":
-            dsets.append(load_fisher(split=split))
-        elif d == "vacation_interview":
-            dsets.append(load_vacation_interview())
-        elif d == "callhome":
-            dsets.append(load_callhome(split))
-        else:
-            raise NotImplementedError(f"{d} is not yet implemented")
-    dsets = concatenate_datasets(dsets)
-    return dsets
 
 
 DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
@@ -134,7 +97,7 @@ class DialogAudioDM(pl.LightningDataModule):
         To avoid the `datasets` logging warnings set `DATASETS_VERBOSITY=error` in your terminal ENV.
         """
         for split in ["train", "validation", "test"]:
-            _ = get_dialog_audio_datasets(
+            _ = load_spoken_dataset(
                 datasets=self.datasets,
                 split=split,
             )
@@ -169,7 +132,7 @@ class DialogAudioDM(pl.LightningDataModule):
         """Loads the datasets"""
 
         if stage in (None, "fit"):
-            train_hf_dataset = get_dialog_audio_datasets(
+            train_hf_dataset = load_spoken_dataset(
                 datasets=self.datasets,
                 split="train",
                 train_files=self.train_files,
@@ -177,7 +140,7 @@ class DialogAudioDM(pl.LightningDataModule):
                 test_files=self.test_files,
             )
             self.train_dset = self._dataset(train_hf_dataset, split="train")
-            val_hf_dataset = get_dialog_audio_datasets(
+            val_hf_dataset = load_spoken_dataset(
                 datasets=self.datasets,
                 split="val",
                 train_files=self.train_files,
@@ -187,7 +150,7 @@ class DialogAudioDM(pl.LightningDataModule):
             self.val_dset = self._dataset(val_hf_dataset, split="val")
 
         if stage in (None, "test"):
-            test_hf_dataset = get_dialog_audio_datasets(
+            test_hf_dataset = load_spoken_dataset(
                 datasets=self.datasets,
                 split="test",
                 train_files=self.train_files,
@@ -329,8 +292,6 @@ if __name__ == "__main__":
     from os.path import join
 
     data_conf = DialogAudioDM.load_config()
-
-    DialogAudioDM.print_dm(data_conf)
 
     # folds = "/home/erik/projects/conv_ssl/conv_ssl/config/swb_kfolds"
     # train_files = join(folds, "1_fold_train.txt")

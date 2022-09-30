@@ -4,6 +4,8 @@ from .multiwoz_v22 import load_multiwoz_v22
 from .metawoz import load_metawoz
 from .taskmaster import load_taskmaster1, load_taskmaster2, load_taskmaster3
 
+from ..spoken_dialog import load_spoken_dataset
+
 
 def load_multiple_datasets(datasets, split):
     dsets = []
@@ -22,4 +24,6 @@ def load_multiple_datasets(datasets, split):
             dsets.append(load_taskmaster2(split))
         elif d == "taskmaster3":
             dsets.append(load_taskmaster3(split))
+        elif d in ["fisher", "switchboard", "callhome"]:
+            dsets.append(load_spoken_dataset(datasets=[d], split=split))
     return dsets
