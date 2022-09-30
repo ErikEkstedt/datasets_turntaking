@@ -6,8 +6,8 @@ def load_curiosity_dialogs(split="train"):
     Splits: ['train', 'val', 'test']
     """
 
-    def add_dataset_name(examples):
-        examples["dataset_name"] = "curiosity_dialogs"
+    def add_dataset(examples):
+        examples["dataset"] = "curiosity_dialogs"
 
         # ensure consecutive speaker change
         dialog = [examples["dialog"][0]]
@@ -57,7 +57,7 @@ def load_curiosity_dialogs(split="train"):
     dset = load_dataset("curiosity_dialogs", split=split)
     dset = dset.flatten()
     dset = dset.rename_column("messages.message", "dialog")
-    dset = dset.map(add_dataset_name)
+    dset = dset.map(add_dataset)
     dset = dset.remove_columns(remove_curiosity)
     return dset
 

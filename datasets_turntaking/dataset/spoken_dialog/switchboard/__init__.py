@@ -22,7 +22,7 @@ def load_switchboard(
         split = "validation"
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "switchboard"
+        examples["dataset"] = "switchboard"
         if audio_root is not None:
             examples["audio_path"] = join(audio_root, examples["audio_path"] + ext)
 

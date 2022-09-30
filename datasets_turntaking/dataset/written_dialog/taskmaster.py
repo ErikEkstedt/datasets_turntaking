@@ -63,7 +63,7 @@ def load_taskmaster1(split="train"):
     """
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "taskmaster1"
+        examples["dataset"] = "taskmaster1"
         examples["dialog"] = get_every_other_speaker_dialog(examples["dialog"])
         return examples
 
@@ -81,7 +81,7 @@ def load_taskmaster1(split="train"):
 
 def load_taskmaster2(split="train"):
     def process_and_add_name(examples):
-        examples["dataset_name"] = "taskmaster2"
+        examples["dataset"] = "taskmaster2"
         examples["dialog"] = get_every_other_speaker_dialog(examples["dialog"])
         return examples
 
@@ -118,7 +118,7 @@ def load_taskmaster3(split="train"):
     """
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "taskmaster3"
+        examples["dataset"] = "taskmaster3"
         examples["dialog"] = get_every_other_speaker_dialog(examples["dialog"])
         return examples
 

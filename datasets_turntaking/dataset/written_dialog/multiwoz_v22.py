@@ -13,8 +13,8 @@ def load_multiwoz_v22(split="train"):
     use `ignore_verifications=True` for now
     """
 
-    def add_dataset_name(examples):
-        examples["dataset_name"] = "multi_woz_v22"
+    def add_dataset(examples):
+        examples["dataset"] = "multi_woz_v22"
 
         # ensure correct speaker shifts
         dialog = [examples["dialog"][0]]
@@ -44,7 +44,7 @@ def load_multiwoz_v22(split="train"):
     dset = load_dataset("multi_woz_v22", ignore_verifications=True, split=split)
     dset = dset.flatten()
     dset = dset.rename_column("turns.utterance", "dialog")
-    dset = dset.map(add_dataset_name)
+    dset = dset.map(add_dataset)
     dset = dset.remove_columns(remove_multi_woz)
     return dset
 

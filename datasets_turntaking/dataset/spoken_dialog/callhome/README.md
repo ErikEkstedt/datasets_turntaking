@@ -48,7 +48,7 @@ print("sample_rate: ", sr)
 #         speaker: 139
 #         start: 139
 #         end: 139
-# dataset_name: callhome
+# dataset: callhome
 # waveform:  torch.Size([2, 8293558])
 # duration:  1036.69
 # sample_rate:  8000

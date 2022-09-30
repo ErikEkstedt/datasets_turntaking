@@ -9,7 +9,7 @@ DATASET_SCRIPT = join(
 
 def load_vacation_interview():
     def process_and_add_name(examples):
-        examples["dataset_name"] = "vacation_interview"
+        examples["dataset"] = "vacation_interview"
         return examples
 
     dset = load_dataset(DATASET_SCRIPT, name="default", split="train")

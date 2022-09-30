@@ -14,7 +14,7 @@ def load_librispeech(split="train"):
         split = "validation"
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "librispeech_asr"
+        examples["dataset"] = "librispeech_asr"
         return examples
 
     # dset = load_dataset("librispeech_asr", name="clean", split=split)

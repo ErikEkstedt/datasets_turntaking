@@ -33,8 +33,8 @@ def load_metawoz(split="train"):
     consecutive utterances are from different speakers.
     """
 
-    def add_dataset_name(examples):
-        examples["dataset_name"] = "meta_woz"
+    def add_dataset(examples):
+        examples["dataset"] = "meta_woz"
         return examples
 
     remove_metawoz = ["id", "user_id", "bot_id", "domain", "task_id"]
@@ -52,7 +52,7 @@ def load_metawoz(split="train"):
         dset = dset.select(idx)
     dset = dset.remove_columns(remove_metawoz)
     dset = dset.rename_column("turns", "dialog")
-    dset = dset.map(add_dataset_name)
+    dset = dset.map(add_dataset)
     return dset
 
 

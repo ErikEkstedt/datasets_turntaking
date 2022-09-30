@@ -17,7 +17,7 @@ def load_fisher(
         split = "validation"
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "fisher"
+        examples["dataset"] = "fisher"
         return examples
 
     dset = load_dataset(

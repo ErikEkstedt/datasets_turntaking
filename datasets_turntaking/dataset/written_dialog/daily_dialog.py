@@ -9,8 +9,8 @@ def load_daily_dialog(split="train"):
     and got no speaker-id information? Assume that utterances changes speaker every time.
     """
 
-    def add_dataset_name(examples):
-        examples["dataset_name"] = "daily_dialog"
+    def add_dataset(examples):
+        examples["dataset"] = "daily_dialog"
         return examples
 
     if split == "val":
@@ -20,7 +20,7 @@ def load_daily_dialog(split="train"):
 
     dset = load_dataset("daily_dialog", split=split)
     dset = dset.remove_columns(remove_daily_dialog)
-    dset = dset.map(add_dataset_name)
+    dset = dset.map(add_dataset)
     return dset
 
 

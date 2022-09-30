@@ -11,7 +11,7 @@ def load_callhome(split="train"):
         split = "validation"
 
     def process_and_add_name(examples):
-        examples["dataset_name"] = "callhome"
+        examples["dataset"] = "callhome"
         return examples
 
     dset = load_dataset(
