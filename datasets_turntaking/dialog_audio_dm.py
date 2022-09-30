@@ -293,9 +293,6 @@ if __name__ == "__main__":
 
     data_conf = DialogAudioDM.load_config()
 
-    # folds = "/home/erik/projects/conv_ssl/conv_ssl/config/swb_kfolds"
-    # train_files = join(folds, "1_fold_train.txt")
-    # val_files = join(folds, "1_fold_val.txt")
     train_files = None
     val_files = None
     data_conf["dataset"]["vad_hz"] = 50
@@ -335,9 +332,3 @@ if __name__ == "__main__":
             print(f"{k}: {tuple(v.shape)}")
         else:
             print(f"{k}: {v}")
-
-    #############################
-    # from tqdm import tqdm
-    #
-    # for batch in tqdm(dm.train_dataloader()):
-    #     pass

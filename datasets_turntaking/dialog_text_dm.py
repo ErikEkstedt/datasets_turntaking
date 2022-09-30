@@ -234,7 +234,7 @@ class DialogTextDM(pl.LightningDataModule):
         batch_size=10,
         max_length=256,  # the maximum size of the batch
         keep_length=64,  # keep end if over this length
-        num_workers=cpu_count(),
+        num_workers=-1,
         pin_memory=True,
         overwrite=False,
         load_from_cache_file=True,
@@ -249,10 +249,10 @@ class DialogTextDM(pl.LightningDataModule):
 
         self.tokenizer = tokenizer
         self.batch_size = batch_size
-        self.max_length = max_length
+        self.num_workers = cpu_count() if num_workers < 0 else max_length
         self.keep_length = keep_length
+        self.max_length = max_length
         self.pin_memory = pin_memory
-        self.num_workers = num_workers
 
         # `datasets` parameters
         self.load_from_cache_file = load_from_cache_file
