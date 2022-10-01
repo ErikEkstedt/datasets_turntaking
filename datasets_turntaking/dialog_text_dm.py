@@ -1,15 +1,25 @@
 from argparse import ArgumentParser
 from os.path import expanduser, join, exists
-from os import listdir, cpu_count
+from os import cpu_count
 import re
-import shutil
-from typing import Optional
+from typing import Optional, List
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 from datasets import logging, concatenate_datasets, load_from_disk
 import pytorch_lightning as pl
+
+from datasets_turntaking.dataset.spoken_dialog import load_fisher, load_switchboard
+from datasets_turntaking.dataset.written_dialog import (
+    load_taskmaster1,
+    load_taskmaster2,
+    load_taskmaster3,
+    load_curiosity_dialogs,
+    load_daily_dialog,
+    load_metawoz,
+    load_multiwoz_v22,
+)
 
 logger = logging.get_logger(__name__)
 
@@ -28,20 +38,165 @@ POSSIBLE_DATASETS = [
 ]
 
 
-def dataset_name(datasets, tokenizer, split, max_length, keep_length):
+def dataset_name(datasets, tokenizer, split, max_length, keep_length, overlap_length):
     datasets.sort()  # for name consistency
 
     # Datasets
-    name = "_".join(datasets)
+    name = "_".join([d[:3] for d in datasets])
     name += "_text"
     name += f"_{tokenizer.name_or_path}"
     if max_length > 0:
-        name += f"_max{max_length}_keep{keep_length}"
+        name += f"_max{max_length}_keep{keep_length}_ovrl{overlap_length}"
     name += f"_{split}"
     savepath = join(CACHE_PATH, name)
     return savepath
 
 
+def tokenize_dataset(sample, tokenizer):
+    t = tokenizer(sample["dialog"])
+    sample["input_ids"] = t["input_ids"]
+    sample["speaker_ids"] = t["speaker_ids"]
+    return sample
+
+
+def force_max_len_dataset(sample, max_length, overlap_length, keep_length):
+    batch_inp = sample["input_ids"]
+    batch_sp = sample["speaker_ids"]
+    batch_dataset = sample.get("dataset", None)
+    batch_session = sample.get("session", None)
+    batch_audio_path = sample.get("audio_path", None)
+
+    step_len = max_length - overlap_length
+
+    # Split to appropriate lengths
+    input_ids, speaker_ids = [], []
+    dataset, session, audio_path = [], [], []
+    for batch in range(len(batch_inp)):
+        tmp_inps, tmp_sp = batch_inp[batch], batch_sp[batch]
+        for i in range(0, len(tmp_inps), step_len):
+            size = min(len(tmp_inps), i + max_length) - i
+            if size >= keep_length:
+                input_ids.append(tmp_inps[i : i + max_length])
+                speaker_ids.append(tmp_sp[i : i + max_length])
+                if batch_dataset is not None:
+                    dataset.append(batch_dataset[batch])
+                if batch_session is not None:
+                    session.append(batch_session[batch])
+                if batch_audio_path is not None:
+                    audio_path.append(batch_audio_path[batch])
+            else:
+                break
+
+    sample["input_ids"] = input_ids
+    sample["speaker_ids"] = speaker_ids
+    if len(dataset) > 0:
+        sample["dataset"] = dataset
+    if len(session) > 0:
+        sample["session"] = session
+    if len(audio_path) > 0:
+        sample["audio_path"] = audio_path
+    return sample
+
+
+def filter_empty_turns(d):
+    """
+    return only dialogs with no empty turns
+    """
+    for utterance in d["dialog"]:
+        if utterance == "" or not re.search(r"\w", utterance):  # utt is empty
+            return False
+    return True
+
+
+def load_text_dataset(
+    datasets,
+    tokenizer,
+    split: str = "train",
+    max_length: int = 256,
+    keep_length: int = 20,
+    overlap_length: int = 10,
+    omit_overlap_within: bool = True,
+    omit_backchannels: bool = False,
+    overwrite: bool = False,
+    load_from_cache_file: bool = True,
+    num_proc: Optional[int] = None,
+    savepath: Optional[str] = None,
+):
+    if savepath is None:
+        savepath = dataset_name(
+            datasets, tokenizer, split, max_length, keep_length, overlap_length
+        )
+
+    if exists(savepath) and not overwrite:
+        logger.info(f"LOAD PREPROCESSED DATASET: {savepath}")
+        return load_from_disk(savepath)
+
+    dsets = []
+    for d in datasets:
+        if d == "fisher":
+            dsets.append(
+                load_fisher(
+                    split, omit_overlap_within, omit_backchannels, format_turns=True
+                )
+            )
+        elif d == "switchboard":
+            dsets.append(
+                load_switchboard(
+                    split, omit_overlap_within, omit_backchannels, format_turns=True
+                )
+            )
+        elif d == "curiosity_dialogs":
+            dsets.append(load_curiosity_dialogs(split))
+        elif d == "daily_dialog":
+            dsets.append(load_daily_dialog(split))
+        elif d == "multi_woz_v22":
+            dsets.append(load_multiwoz_v22(split))
+        elif d == "meta_woz":
+            dsets.append(load_metawoz(split))
+        elif d == "taskmaster1":
+            dsets.append(load_taskmaster1(split))
+        elif d == "taskmaster2":
+            dsets.append(load_taskmaster2(split))
+        elif d == "taskmaster3":
+            dsets.append(load_taskmaster3(split))
+        else:
+            raise NotImplementedError(f"Not installed: {d}")
+
+    dset = concatenate_datasets(dsets)
+    dset = dset.filter(filter_empty_turns, desc="Filter Empty Turns")
+    num_proc = num_proc if num_proc is not None else cpu_count()
+    dset = dset.map(
+        tokenize_dataset,
+        batched=True,
+        fn_kwargs={"tokenizer": tokenizer},
+        load_from_cache_file=load_from_cache_file,
+        num_proc=num_proc,
+        desc="Tokenize",
+    )
+    dset = dset.map(
+        force_max_len_dataset,
+        batched=True,
+        fn_kwargs={
+            "max_length": max_length,
+            "overlap_length": overlap_length,
+            "keep_length": keep_length,
+        },
+        load_from_cache_file=load_from_cache_file,
+        remove_columns=["dialog", "vad"],
+        num_proc=num_proc,
+        desc="Force Max Length",
+    )
+    dset.set_format(
+        "torch", columns=["input_ids", "speaker_ids"], output_all_columns=True
+    )
+
+    print(f"SAVE TO DISK: {savepath}")
+    dset.save_to_disk(savepath)
+    return dset
+
+
+# TODO: Better formatting see dataset/spoken_dialog/utils.py
+# Instead of format_sort_and_combine_utterances below.
 def concatenate_dsets(dsets, columns=["dialog", "dataset"]):
     """
     Concatenate and simplify
@@ -94,18 +249,7 @@ def format_sort_and_combine_utterances(d):
     return d
 
 
-def filter_empty_turns(d):
-    """
-    return only dialogs with no empty turns
-    """
-    for utterance in d["dialog"]:
-        if utterance == "" or not re.search(r"\w", utterance):  # utt is empty
-            print("EMPTY")
-            return False
-    return True
-
-
-def load_text_dataset(
+def load_text_dataset_old(
     datasets,
     tokenizer,
     split="train",
@@ -118,17 +262,6 @@ def load_text_dataset(
     savepath=None,
     **kwargs,
 ):
-    from datasets_turntaking.dataset.spoken_dialog import load_fisher, load_switchboard
-    from datasets_turntaking.dataset.written_dialog import (
-        load_taskmaster1,
-        load_taskmaster2,
-        load_taskmaster3,
-        load_curiosity_dialogs,
-        load_daily_dialog,
-        load_metawoz,
-        load_multiwoz_v22,
-    )
-
     if savepath is None:
         savepath = dataset_name(datasets, tokenizer, split, max_length, keep_length)
 
@@ -228,17 +361,17 @@ class DialogTextDM(pl.LightningDataModule):
     def __init__(
         self,
         tokenizer,
-        datasets=["daily_dialog"],
-        columns=["dataset", "dialog"],  # features prior to tokenization
-        savepath=None,
-        batch_size=10,
-        max_length=256,  # the maximum size of the batch
-        keep_length=64,  # keep end if over this length
-        num_workers=-1,
-        pin_memory=True,
-        overwrite=False,
-        load_from_cache_file=True,
-        num_proc=None,
+        datasets: List[str] = ["daily_dialog"],
+        columns: List[str] = ["dataset", "dialog"],  # features prior to tokenization
+        savepath: Optional[str] = None,
+        batch_size: int = 10,
+        max_length: int = 256,  # the maximum size of the batch
+        keep_length: int = 64,  # keep end if over this length
+        num_workers: int = -1,
+        pin_memory: bool = True,
+        overwrite: bool = False,
+        load_from_cache_file: bool = True,
+        num_proc: Optional[int] = None,
     ):
         super().__init__()
         assert keep_length < max_length, "Error: `keep_length` < `max_length`"
@@ -425,29 +558,37 @@ if __name__ == "__main__":
     print("Load tokenizer...")
     tokenizer = SpokenDialogTokenizer()
 
-    print("Load DM...")
-    dm = DialogTextDM(
-        tokenizer,
-        datasets=["switchboard", "fisher", "daily_dialog", "curiosity_dialogs"],
-        max_length=256,
-        batch_size=20,
-        # overwrite=True,
+    dset = load_text_dataset(
+        datasets=["fisher", "switchboard", "daily_dialog", "curiosity_dialogs"],
+        tokenizer=tokenizer,
     )
-    dm.prepare_data()
-
-    dm.setup()
-
-    d = dm.train_dset[0]
+    d = dset[0]
     t = tokenizer.decode(d["input_ids"])
-
     print(t)
 
-    for k, v in d.items():
-        if isinstance(v, torch.Tensor):
-            print(f"{k}: {tuple(v.shape)}")
-        else:
-            print(f"{k}: {len(v)}")
-
-    batch = next(iter(dm.train_dataloader()))
-    print("batch: ", batch.keys())
-    print(batch["input_ids"].shape)
+    # print("Load DM...")
+    # dm = DialogTextDM(
+    #     tokenizer,
+    #     datasets=["switchboard", "fisher", "daily_dialog", "curiosity_dialogs"],
+    #     max_length=256,
+    #     batch_size=20,
+    #     # overwrite=True,
+    # )
+    # dm.prepare_data()
+    #
+    # dm.setup()
+    #
+    # d = dm.train_dset[0]
+    # t = tokenizer.decode(d["input_ids"])
+    #
+    # print(t)
+    #
+    # for k, v in d.items():
+    #     if isinstance(v, torch.Tensor):
+    #         print(f"{k}: {tuple(v.shape)}")
+    #     else:
+    #         print(f"{k}: {len(v)}")
+    #
+    # batch = next(iter(dm.train_dataloader()))
+    # print("batch: ", batch.keys())
+    # print(batch["input_ids"].shape)

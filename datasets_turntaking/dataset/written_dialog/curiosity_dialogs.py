@@ -57,7 +57,7 @@ def load_curiosity_dialogs(split="train"):
     dset = load_dataset("curiosity_dialogs", split=split)
     dset = dset.flatten()
     dset = dset.rename_column("messages.message", "dialog")
-    dset = dset.map(add_dataset)
+    dset = dset.map(add_dataset, desc="Curiosity add dset")
     dset = dset.remove_columns(remove_curiosity)
     return dset
 

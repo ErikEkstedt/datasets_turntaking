@@ -1,93 +1,27 @@
-from copy import deepcopy
-
-
-BACKCHANNEL_CANDIDATES = [
+# Backchannel/filler/acknowledgement
+CAND_WORDS = [
+    "oh",
     "yeah",
+    "right",
+    "really",
+    "sure",
+    "mhm",
+    "mm",
     "um-hum",
     "uh-huh",
-    "right",
-    "oh",
-    # two-word bcs
-    "oh yeah",
-    "yeah yeah",
-    "right right",
-    "oh really",
-    "um-hum um-hum",
-    "uh-huh uh-huh",
-    "oh uh-huh",
 ]
-
-BACKCHANNEL_MAP = {
-    "uh-huh": "uhuh",
-    "huh-uh": "uhuh",
-    "uh-hum": "mhm",
-    "uh-hums": "mhm",
-    "um-hum": "mhm",
-    "hum-um": "mhm",
-    "uh-oh": "uhoh",
-}
+BC_CANDS = CAND_WORDS + [a + " " + b for a in CAND_WORDS for b in CAND_WORDS]
 
 
-def format_spoken_dialogs(d):
-    """
-    Processes spoken datasets (fisher, swithcboard) to a similar format as other
-    conversational (daily_dialog, ...) written datasets.
-    """
-    utterances = format_to_utterances(d)
-    d["utterances"] = refine_dialog(utterances)
-    d["dialog"] = [u["text"] for u in d["utterances"]]
-    return d
-
-
-def format_to_utterances(d):
-    A = [
-        {"text": t, "start": s, "end": e, "speaker": 0}
-        for t, s, e in zip(
-            d["dialog"][0]["text"],
-            d["dialog"][0]["start"],
-            d["dialog"][0]["end"],
-        )
-    ]
-    B = [
-        {"text": t, "start": s, "end": e, "speaker": 1}
-        for t, s, e in zip(
-            d["dialog"][1]["text"],
-            d["dialog"][1]["start"],
-            d["dialog"][1]["end"],
-        )
-    ]
-
-    utterances = A + B
-    utterances.sort(key=lambda x: x["start"])
-    return utterances
-
-
-def is_backchannel(utt):
-    return utt["text"] in BACKCHANNEL_CANDIDATES
-
-
-def join_utterances(utt1, utt2):
-    utt = deepcopy(utt1)
-
-    utt["text"] += " " + utt2["text"]
-    utt["end"] = utt2["end"]
-
-    if "words" in utt:
-        utt["words"] += utt2["words"]
-
-    if "backchannel" in utt2:
-        utt["backchannel"] += utt2["backchannel"]
-
-    if "backchannel_start" in utt2:
-        utt["backchannel_start"] += utt2["backchannel_start"]
-
-    if "within" in utt2:
-        utt["within"] += utt2["within"]
-
-    if "within_start" in utt2:
-        utt["within_start"] += utt2["within_start"]
-
-    return utt
+def speaker_join_and_sort(dialog):
+    all_utterances_sorted = []
+    for speaker, cc in enumerate(dialog):
+        for t, s, e in zip(cc["text"], cc["start"], cc["end"]):
+            all_utterances_sorted.append(
+                {"start": s, "end": e, "text": t, "speaker": speaker}
+            )
+    all_utterances_sorted.sort(key=lambda x: x["start"])
+    return all_utterances_sorted
 
 
 def is_overlap_within(current, prev):
@@ -96,7 +30,13 @@ def is_overlap_within(current, prev):
     return start_within and end_within
 
 
-def refine_dialog(utterances):  # , vad=None):
+def is_backchannel(current):
+    return current["text"] in BC_CANDS
+
+
+def collapse_dialog(
+    utterances, omit_overlap_within=False, omit_backchannels=False, verbose=False
+):
     """
     Refine the dialog by omitting `overlap_within` and `backchannel`
     speech, both of which are added to the current/major utterance. Keeps
@@ -114,36 +54,38 @@ def refine_dialog(utterances):  # , vad=None):
                 }
     """
 
-    # First utterance
-    first = utterances[0]
-    first["backchannel"] = []
-    first["backchannel_start"] = []
-    first["backchannel_end"] = []
-    first["within"] = []
-    first["within_start"] = []
-    first["within_end"] = []
-    refined = [first]
-    last_speaker = first["speaker"]
-
+    n_bc = 0
+    n_ov = 0
+    refined = [utterances[0]]
     for current in utterances[1:]:
-        if is_backchannel(current):
-            refined[-1]["backchannel"].append(current["text"])
-            refined[-1]["backchannel_start"].append(current["start"])
-            refined[-1]["backchannel_end"].append(current["end"])
-        elif is_overlap_within(current, refined[-1]):
-            refined[-1]["within"].append(current["text"])
-            refined[-1]["within_start"].append(current["start"])
-            refined[-1]["within_end"].append(current["end"])
+        if omit_overlap_within and is_overlap_within(current, refined[-1]):
+            n_ov += 1
+            continue
+
+        if omit_backchannels and is_backchannel(current):
+            n_bc += 1
+            continue
+
+        if current["speaker"] == refined[-1]["speaker"]:
+            refined[-1]["text"] += " " + current["text"]
+            refined[-1]["end"] = current["end"]
         else:
-            if current["speaker"] == last_speaker:
-                refined[-1] = join_utterances(refined[-1], current)
-            else:
-                current["backchannel"] = []
-                current["backchannel_start"] = []
-                current["backchannel_end"] = []
-                current["within"] = []
-                current["within_start"] = []
-                current["within_end"] = []
-                refined.append(current)
-                last_speaker = current["speaker"]
+            refined.append(current)
+    if verbose:
+        if n_ov > 0:
+            print("Omitted Overlaps: ", n_ov)
+        if n_bc > 0:
+            print("Omitted BCs: ", n_bc)
     return refined
+
+
+def dialog_to_text_list(dialog):
+    return [d["text"] for d in dialog]
+
+
+def format_dialog_turns(sample, omit_overlap_within, omit_backchannels):
+    dialog = speaker_join_and_sort(sample["dialog"])
+    dialog = collapse_dialog(dialog, omit_overlap_within, omit_backchannels)
+    utterances = dialog_to_text_list(dialog)
+    sample["dialog"] = utterances
+    return sample

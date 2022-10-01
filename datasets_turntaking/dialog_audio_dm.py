@@ -9,12 +9,24 @@ import torch
 # WARNING: Setting verbosity level by hand...
 environ["DATASETS_VERBOSITY"] = "error"
 
+from datasets import concatenate_datasets, load_dataset
 from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
-from datasets_turntaking.dataset.spoken_dialog import load_spoken_dataset
+from datasets_turntaking.dataset.spoken_dialog import load_fisher, load_switchboard
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 
 
 DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
+
+
+def load_spoken_dialog_audio_dataset(datasets, split, **kwargs):
+    dset = []
+    for dataset in datasets:
+        if dataset == "fisher":
+            dset.append(load_fisher(split=split, format_turns=False))
+        elif dataset == "switchboard":
+            dset.append(load_switchboard(split=split, format_turns=False))
+    dset = concatenate_datasets(dset)
+    return dset
 
 
 class DialogAudioDM(pl.LightningDataModule):
@@ -97,9 +109,12 @@ class DialogAudioDM(pl.LightningDataModule):
         To avoid the `datasets` logging warnings set `DATASETS_VERBOSITY=error` in your terminal ENV.
         """
         for split in ["train", "validation", "test"]:
-            _ = load_spoken_dataset(
+            _ = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split=split,
+                train_sessions=self.train_files,
+                val_sessions=self.val_files,
+                test_sessions=self.test_files,
             )
 
     def _dataset(self, dset, split="train"):
@@ -132,7 +147,7 @@ class DialogAudioDM(pl.LightningDataModule):
         """Loads the datasets"""
 
         if stage in (None, "fit"):
-            train_hf_dataset = load_spoken_dataset(
+            train_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="train",
                 train_files=self.train_files,
@@ -140,7 +155,7 @@ class DialogAudioDM(pl.LightningDataModule):
                 test_files=self.test_files,
             )
             self.train_dset = self._dataset(train_hf_dataset, split="train")
-            val_hf_dataset = load_spoken_dataset(
+            val_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="val",
                 train_files=self.train_files,
@@ -150,7 +165,7 @@ class DialogAudioDM(pl.LightningDataModule):
             self.val_dset = self._dataset(val_hf_dataset, split="val")
 
         if stage in (None, "test"):
-            test_hf_dataset = load_spoken_dataset(
+            test_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="test",
                 train_files=self.train_files,

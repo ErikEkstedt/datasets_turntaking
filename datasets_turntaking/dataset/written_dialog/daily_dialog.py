@@ -20,7 +20,7 @@ def load_daily_dialog(split="train"):
 
     dset = load_dataset("daily_dialog", split=split)
     dset = dset.remove_columns(remove_daily_dialog)
-    dset = dset.map(add_dataset)
+    dset = dset.map(add_dataset, desc="DailyD add dset")
     return dset
 
 

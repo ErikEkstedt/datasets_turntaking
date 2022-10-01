@@ -52,7 +52,7 @@ def load_metawoz(split="train"):
         dset = dset.select(idx)
     dset = dset.remove_columns(remove_metawoz)
     dset = dset.rename_column("turns", "dialog")
-    dset = dset.map(add_dataset)
+    dset = dset.map(add_dataset, desc="MetaWoz add dset")
     return dset
 
 
