@@ -220,7 +220,7 @@ class DialogTextDM(pl.LightningDataModule):
 
         self.tokenizer = tokenizer
         self.batch_size = batch_size
-        self.num_workers = cpu_count() if num_workers < 0 else max_length
+        self.num_workers = cpu_count() if num_workers < 0 else num_workers
         self.keep_length = keep_length
         self.max_length = max_length
         self.pin_memory = pin_memory
@@ -335,7 +335,7 @@ class DialogTextDM(pl.LightningDataModule):
         parser.add_argument("--overwrite", default=False, type=bool)
         parser.add_argument(
             "--max_length",
-            default=500,
+            default=256,
             type=int,
             help="maximum length of sequences (applied in `collate_fn`)",
         )
@@ -354,14 +354,14 @@ def basic_use():
     from turngpt.tokenizer import SpokenDialogTokenizer
 
     parser = ArgumentParser()
-    parser = ConversationalDM.add_data_specific_args(parser)
+    parser = DialogTextDM.add_data_specific_args(parser)
     args = parser.parse_args()
     for k, v in vars(args).items():
         print(f"{k}: {v}")
 
     tokenizer = SpokenDialogTokenizer()
 
-    dm = ConversationalDM(
+    dm = DialogTextDM(
         tokenizer,
         batch_size=args.batch_size,
         max_length=args.max_length,
