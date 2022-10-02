@@ -195,168 +195,6 @@ def load_text_dataset(
     return dset
 
 
-# TODO: Better formatting see dataset/spoken_dialog/utils.py
-# Instead of format_sort_and_combine_utterances below.
-def concatenate_dsets(dsets, columns=["dialog", "dataset"]):
-    """
-    Concatenate and simplify
-    """
-    dset = concatenate_datasets(dsets)
-    remove = []
-    for c in dset.column_names:
-        if c not in columns:
-            remove.append(c)
-    if len(remove) > 0:
-        dset = dset.remove_columns(remove)
-    return dset
-
-
-def format_sort_and_combine_utterances(d):
-    """
-    Used in spoken datasets [switchboard, fisher]
-    1. Collect all utterances from both speakers in a single list.
-    2. Sort list by starting time.
-    3. Combine adjacent utterances from the same speaker.
-    4. Remove time information
-    5. Update dialogs
-    """
-
-    dialog = d["dialog"]
-
-    # 1 and 2
-    all_utterances_sorted = []
-    for speaker, cc in enumerate(dialog):
-        for t, s, e in zip(cc["text"], cc["start"], cc["end"]):
-            all_utterances_sorted.append(
-                {"start": s, "end": e, "text": t, "speaker": speaker}
-            )
-    all_utterances_sorted.sort(key=lambda x: x["start"])
-
-    # 3
-    combined_utterances = [all_utterances_sorted[0]]
-    for utt in all_utterances_sorted[1:]:
-        if utt["speaker"] == combined_utterances[-1]["speaker"]:
-            combined_utterances[-1]["text"] += " " + utt["text"]
-            combined_utterances[-1]["end"] = utt["end"]
-        else:
-            combined_utterances.append(utt)
-
-    # 4
-    utterances = [t["text"] for t in combined_utterances]
-
-    d["dialog"] = utterances
-
-    return d
-
-
-def load_text_dataset_old(
-    datasets,
-    tokenizer,
-    split="train",
-    columns=["dialog", "dataset"],
-    overwrite=False,
-    load_from_cache_file=True,
-    num_proc=cpu_count(),
-    max_length=-1,
-    keep_length=64,
-    savepath=None,
-    **kwargs,
-):
-    if savepath is None:
-        savepath = dataset_name(datasets, tokenizer, split, max_length, keep_length)
-
-    if exists(savepath) and not overwrite:
-        logger.info(f"LOAD PREPROCESSED DATASET: {savepath}")
-        return load_from_disk(savepath)
-
-    def encode_dataset_fixed_size(d):
-        """
-        Tokenizes the dataset and organize to appropriate lengths (`self.max_length`)
-        """
-        t = tokenizer(d["dialog"])
-        inp_ids = t["input_ids"]
-        sp_ids = t["speaker_ids"]
-
-        # Split to appropriate lengths
-        input_ids = []
-        speaker_ids = []
-        dataset = []
-        if max_length > 0:
-            for batch in range(len(inp_ids)):
-                tmp_inps = inp_ids[batch]
-                tmp_sp = sp_ids[batch]
-                for i in range(0, len(tmp_inps), max_length):
-                    size = min(len(tmp_inps), i + max_length) - i
-                    if size >= keep_length:
-                        input_ids.append(tmp_inps[i : i + max_length])
-                        speaker_ids.append(tmp_sp[i : i + max_length])
-                        if "dataset" in d:
-                            dataset.append(str(d["dataset"][batch]))
-                    else:
-                        break
-        else:
-            input_ids = inp_ids
-            speaker_ids = sp_ids
-            if "dataset" in d:
-                dataset = d["dataset"]
-
-        ret = {"input_ids": input_ids, "speaker_ids": speaker_ids}
-        if len(dataset) > 0:
-            ret["dataset"] = dataset
-        return ret
-
-    dsets = []
-    for d in datasets:
-        if d in ["fisher", "switchboard"]:
-            if d == "fisher":
-                dset = load_fisher(split=split)
-            else:
-                dset = load_switchboard(split=split)
-            dset = dset.map(format_sort_and_combine_utterances)
-            dsets.append(dset)
-        elif d == "curiosity_dialogs":
-            dsets.append(load_curiosity_dialogs(split))
-        elif d == "daily_dialog":
-            dsets.append(load_daily_dialog(split))
-        elif d == "multi_woz_v22":
-            dsets.append(load_multiwoz_v22(split))
-        elif d == "meta_woz":
-            dsets.append(load_metawoz(split))
-        elif d == "taskmaster1":
-            dsets.append(load_taskmaster1(split))
-        elif d == "taskmaster2":
-            dsets.append(load_taskmaster2(split))
-        elif d == "taskmaster3":
-            dsets.append(load_taskmaster3(split))
-        else:
-            raise NotImplementedError(f"Not installed: {d}")
-
-    dataset = concatenate_dsets(dsets, columns=columns)
-
-    print("#" * 40)
-    print("Filter empty turns")
-    print("#" * 40)
-    dataset = dataset.filter(filter_empty_turns)
-
-    print("#" * 40)
-    print(f"TOKENIZE {split} DATASET: ", tokenizer.name_or_path)
-    print("#" * 40)
-    dataset = dataset.map(
-        encode_dataset_fixed_size,
-        batched=True,
-        remove_columns=dataset.column_names,
-        load_from_cache_file=load_from_cache_file,
-        num_proc=num_proc,
-    )
-    print("DATASET: ", dataset)
-    dataset.set_format(
-        "torch", columns=["input_ids", "speaker_ids"], output_all_columns=True
-    )
-    print(f"SAVE TO DISK: {savepath}")
-    dataset.save_to_disk(savepath)
-    return dataset
-
-
 class DialogTextDM(pl.LightningDataModule):
     def __init__(
         self,
@@ -406,7 +244,6 @@ class DialogTextDM(pl.LightningDataModule):
                 datasets=self.datasets,
                 tokenizer=self.tokenizer,
                 split=split,
-                columns=["dialog", "dataset"],
                 overwrite=self.overwrite,
                 load_from_cache_file=self.load_from_cache_file,
                 num_proc=self.num_proc,
@@ -420,7 +257,6 @@ class DialogTextDM(pl.LightningDataModule):
                 datasets=self.datasets,
                 tokenizer=self.tokenizer,
                 split="train",
-                columns=["dialog", "dataset"],
                 overwrite=self.overwrite,
                 load_from_cache_file=self.load_from_cache_file,
                 num_proc=self.num_proc,
@@ -431,7 +267,6 @@ class DialogTextDM(pl.LightningDataModule):
                 datasets=self.datasets,
                 tokenizer=self.tokenizer,
                 split="val",
-                columns=["dialog", "dataset"],
                 overwrite=self.overwrite,
                 load_from_cache_file=self.load_from_cache_file,
                 num_proc=self.num_proc,
@@ -444,7 +279,6 @@ class DialogTextDM(pl.LightningDataModule):
                 datasets=self.datasets,
                 tokenizer=self.tokenizer,
                 split="test",
-                columns=["dialog", "dataset"],
                 overwrite=self.overwrite,
                 load_from_cache_file=self.load_from_cache_file,
                 num_proc=self.num_proc,
@@ -566,22 +400,22 @@ if __name__ == "__main__":
     t = tokenizer.decode(d["input_ids"])
     print(t)
 
-    # print("Load DM...")
-    # dm = DialogTextDM(
-    #     tokenizer,
-    #     datasets=["switchboard", "fisher", "daily_dialog", "curiosity_dialogs"],
-    #     max_length=256,
-    #     batch_size=20,
-    #     # overwrite=True,
-    # )
-    # dm.prepare_data()
-    #
-    # dm.setup()
-    #
-    # d = dm.train_dset[0]
-    # t = tokenizer.decode(d["input_ids"])
-    #
-    # print(t)
+    print("Load DM...")
+    dm = DialogTextDM(
+        tokenizer,
+        datasets=["switchboard", "fisher", "daily_dialog", "curiosity_dialogs"],
+        max_length=256,
+        batch_size=20,
+        # overwrite=True,
+    )
+    dm.prepare_data()
+
+    dm.setup()
+
+    d = dm.train_dset[0]
+    t = tokenizer.decode(d["input_ids"])
+    print(t)
+
     #
     # for k, v in d.items():
     #     if isinstance(v, torch.Tensor):
