@@ -1,61 +1,45 @@
-from os import cpu_count, environ
+from os import cpu_count
 from os.path import join
+from typing import Any, Callable, List, Optional
+
 from torch.utils.data import DataLoader
-from typing import Optional, Dict
 import pytorch_lightning as pl
 import torch
 
-# omit verbose `datasets` info
-# WARNING: Setting verbosity level by hand...
-environ["DATASETS_VERBOSITY"] = "error"
-
-from datasets import concatenate_datasets, load_dataset
-from datasets_turntaking.dialog_audio_dataset import DialogAudioDataset
-from datasets_turntaking.dataset.spoken_dialog import load_fisher, load_switchboard
+from datasets_turntaking.dialog_audio_dataset import (
+    DialogAudioDataset,
+    load_spoken_dialog_audio_dataset,
+)
 from datasets_turntaking.utils import repo_root, OmegaConfArgs, load_config
 
 
 DEFAULT_CONFIG = join(repo_root(), "config/dset_dialog_audio.yaml")
 
 
-def load_spoken_dialog_audio_dataset(datasets, split, **kwargs):
-    dset = []
-    for dataset in datasets:
-        if dataset == "fisher":
-            dset.append(load_fisher(split=split, format_turns=False))
-        elif dataset == "switchboard":
-            dset.append(load_switchboard(split=split, format_turns=False))
-    dset = concatenate_datasets(dset)
-    return dset
-
-
 class DialogAudioDM(pl.LightningDataModule):
     def __init__(
         self,
-        datasets,
-        type="sliding",  # ipu
-        audio_mono=True,
-        audio_duration=10,
-        audio_normalize=True,
-        audio_overlap=2,
+        datasets: List[str],
+        type: str = "sliding",  # ipu
+        audio_mono: bool = True,
+        audio_duration: int = 10,
+        audio_normalize: bool = True,
+        audio_overlap: int = 2,
         audio_include_ratio=0.4,
-        audio_context_duration=8,
+        audio_context_duration: int = 8,
         ipu_min_time=1,
         ipu_pause_time=0.2,
-        sample_rate=16000,
-        vad=True,
-        vad_hz=100,
-        vad_horizon=2,
-        vad_history=False,
-        vad_history_times=[60, 30, 10, 5],
-        flip_channels=True,
-        train_files=None,
-        val_files=None,
-        test_files=None,
-        batch_size=4,
-        num_workers=0,
-        pin_memory=True,
-        transforms=None,
+        sample_rate: int = 16000,
+        vad: bool = True,
+        vad_hz: int = 100,
+        vad_horizon: float = 2.0,
+        vad_history: bool = False,
+        vad_history_times: List[int] = [60, 30, 10, 5],
+        flip_channels: bool = True,
+        batch_size: int = 4,
+        num_workers: int = 0,
+        pin_memory: bool = True,
+        transforms: Optional[Callable] = None,
     ):
         super().__init__()
         self.datasets = datasets  # names of datasets
@@ -86,15 +70,35 @@ class DialogAudioDM(pl.LightningDataModule):
         self.vad_history_times = vad_history_times
         self.flip_channels = flip_channels
 
-        # Dataset Files
-        self.train_files = train_files
-        self.val_files = val_files
-        self.test_files = test_files
-
         # DataLoder
         self.batch_size = batch_size
         self.pin_memory = pin_memory
         self.num_workers = num_workers
+
+    def _dataset(self, dset, split="train"):
+        # Only flip during training...
+        if split == "train":
+            flip = self.flip_channels
+        else:
+            flip = False
+
+        return DialogAudioDataset(
+            dataset=dset,
+            feature_extractor=None,
+            type=self.type,
+            audio_mono=self.audio_mono,
+            audio_duration=self.audio_duration,
+            audio_overlap=self.audio_overlap,
+            audio_normalize=self.audio_normalize,
+            sample_rate=self.sample_rate,
+            vad=self.vad,
+            vad_hz=self.vad_hz,
+            vad_horizon_time=self.vad_horizon,
+            vad_history=self.vad_history,
+            vad_history_times=self.vad_history_times,
+            flip_channels=flip,
+            transforms=self.transforms,
+        )
 
     def prepare_data(self):
         """
@@ -109,39 +113,7 @@ class DialogAudioDM(pl.LightningDataModule):
         To avoid the `datasets` logging warnings set `DATASETS_VERBOSITY=error` in your terminal ENV.
         """
         for split in ["train", "validation", "test"]:
-            _ = load_spoken_dialog_audio_dataset(
-                datasets=self.datasets,
-                split=split,
-                train_sessions=self.train_files,
-                val_sessions=self.val_files,
-                test_sessions=self.test_files,
-            )
-
-    def _dataset(self, dset, split="train"):
-        # Only flip during training...
-        if split == "train":
-            flip = self.flip_channels
-        else:
-            flip = False
-
-        return DialogAudioDataset(
-            dataset=dset,
-            transforms=self.transforms,
-            feature_extractor=None,
-            type=self.type,
-            audio_mono=self.audio_mono,
-            audio_duration=self.audio_duration,
-            audio_overlap=self.audio_overlap,
-            audio_normalize=self.audio_normalize,
-            sample_rate=self.sample_rate,
-            vad=self.vad,
-            vad_hz=self.vad_hz,
-            vad_horizon=self.vad_horizon,
-            vad_history=self.vad_history,
-            vad_history_times=self.vad_history_times,
-            flip_channels=flip,
-            flip_probability=0.5,
-        )
+            _ = load_spoken_dialog_audio_dataset(datasets=self.datasets, split=split)
 
     def setup(self, stage: Optional[str] = "fit"):
         """Loads the datasets"""
@@ -150,17 +122,11 @@ class DialogAudioDM(pl.LightningDataModule):
             train_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="train",
-                train_files=self.train_files,
-                val_files=self.val_files,
-                test_files=self.test_files,
             )
             self.train_dset = self._dataset(train_hf_dataset, split="train")
             val_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="val",
-                train_files=self.train_files,
-                val_files=self.val_files,
-                test_files=self.test_files,
             )
             self.val_dset = self._dataset(val_hf_dataset, split="val")
 
@@ -168,9 +134,6 @@ class DialogAudioDM(pl.LightningDataModule):
             test_hf_dataset = load_spoken_dialog_audio_dataset(
                 datasets=self.datasets,
                 split="test",
-                train_files=self.train_files,
-                val_files=self.val_files,
-                test_files=self.test_files,
             )
             self.test_dset = self._dataset(test_hf_dataset, split="test")
 
@@ -280,7 +243,7 @@ class DialogAudioDM(pl.LightningDataModule):
         return DEFAULT_CONFIG
 
     @staticmethod
-    def load_config(path=None, args=None, format="dict") -> Dict:
+    def load_config(path=None, args=None, format="dict"):
         if path is None:
             path = DialogAudioDM.default_config_path()
         return load_config(path, args=args, format=format)
@@ -304,15 +267,14 @@ class DialogAudioDM(pl.LightningDataModule):
 
 if __name__ == "__main__":
 
-    from os.path import join
+    import matplotlib.pyplot as plt
+    from datasets_turntaking.features.plot_utils import plot_batch_sample
+    from tqdm import tqdm
 
     data_conf = DialogAudioDM.load_config()
 
-    train_files = None
-    val_files = None
-    data_conf["dataset"]["vad_hz"] = 50
     dm = DialogAudioDM(
-        datasets=["switchboard", "fisher"],
+        datasets=["switchboard"],
         type=data_conf["dataset"]["type"],
         sample_rate=data_conf["dataset"]["sample_rate"],
         audio_mono=data_conf["dataset"]["audio_mono"],
@@ -321,29 +283,35 @@ if __name__ == "__main__":
         audio_overlap=data_conf["dataset"]["audio_overlap"],
         vad_hz=data_conf["dataset"]["vad_hz"],
         vad_horizon=data_conf["dataset"]["vad_horizon"],
-        vad_history=data_conf["dataset"]["vad_history"],
+        vad_history=True,
         vad_history_times=data_conf["dataset"]["vad_history_times"],
-        train_files=train_files,
-        val_files=val_files,
         batch_size=4,
-        num_workers=0,
+        num_workers=cpu_count(),
     )
     dm.prepare_data()
     dm.setup()
     print(dm)
 
-    print("\nBATCH DATASET")
-    d = dm.val_dset[0]
-    for k, v in d.items():
-        if isinstance(v, torch.Tensor):
-            print(f"{k}: {tuple(v.shape)}")
-        else:
-            print(f"{k}: {v}")
+    # print("\nBATCH DATASET")
+    # batch = dm.val_dset[0]
+    # for k, v in batch.items():
+    #     if isinstance(v, torch.Tensor):
+    #         print(f"{k}: {tuple(v.shape)}")
+    #     else:
+    #         print(f"{k}: {v}")
+    # plot_batch_sample(
+    #     waveform=batch["waveform"][0],
+    #     vad=batch["vad"][0],
+    #     vad_hz=dm.vad_hz,
+    # )
 
     print("\nBATCH DATALOADER")
-    batch = next(iter(dm.train_dataloader()))
-    for k, v in batch.items():
-        if isinstance(v, torch.Tensor):
-            print(f"{k}: {tuple(v.shape)}")
-        else:
-            print(f"{k}: {v}")
+    # batch = next(iter(dm.val_dataloader()))
+
+    for batch in tqdm(dm.val_dataloader()):
+        continue
+    # for k, v in batch.items():
+    #     if isinstance(v, torch.Tensor):
+    #         print(f"{k}: {tuple(v.shape)}")
+    #     else:
+    #         print(f"{k}: {v}")

@@ -3,6 +3,7 @@ from os import remove
 from omegaconf import OmegaConf
 import json
 import subprocess
+from typing import Any, Dict, Union, Optional, Tuple
 
 import torch
 import torchaudio
@@ -26,15 +27,15 @@ def time_to_frames(t, hop_time):
     return int(t / hop_time)
 
 
-def time_to_frames_samples(t, sample_rate, hop_length):
+def time_to_frames_samples(t: float, sample_rate: int, hop_length: int) -> int:
     return int(t * sample_rate / hop_length)
 
 
-def time_to_samples(t, sample_rate):
+def time_to_samples(t: float, sample_rate: int) -> float:
     return int(t * sample_rate)
 
 
-def get_audio_info(audio_path):
+def get_audio_info(audio_path: str) -> Dict[str, Any]:
     info = info_sox(audio_path)
     return {
         "name": basename(audio_path),
@@ -47,15 +48,17 @@ def get_audio_info(audio_path):
 
 
 def load_waveform(
-    path,
-    sample_rate=None,
-    start_time=None,
-    end_time=None,
-    normalize=False,
-    mono=False,
-    audio_normalize_threshold=0.05,
-):
-    if start_time is not None:
+    path: str,
+    sample_rate: Optional[int] = None,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    normalize: bool = False,
+    mono: bool = False,
+    audio_normalize_threshold: float = 0.05,
+) -> Tuple[torch.Tensor, int]:
+    if start_time is None:
+        x, sr = torchaudio.load(path)
+    else:
         info = get_audio_info(path)
         frame_offset = time_to_samples(start_time, info["sample_rate"])
         num_frames = info["num_frames"]
@@ -64,24 +67,22 @@ def load_waveform(
         else:
             num_frames = num_frames - frame_offset
         x, sr = torchaudio.load(path, frame_offset=frame_offset, num_frames=num_frames)
-    else:
-        x, sr = torchaudio.load(path)
 
-    if normalize:
-        if x.shape[0] > 1:
-            if x[0].abs().max() > audio_normalize_threshold:
-                x[0] /= x[0].abs().max()
-            if x[1].abs().max() > audio_normalize_threshold:
-                x[1] /= x[1].abs().max()
-        else:
-            if x.abs().max() > audio_normalize_threshold:
-                x /= x.abs().max()
+    # if normalize:
+    #     if x.shape[0] > 1:
+    #         if x[0].abs().max() > audio_normalize_threshold:
+    #             x[0] /= x[0].abs().max()
+    #         if x[1].abs().max() > audio_normalize_threshold:
+    #             x[1] /= x[1].abs().max()
+    #     else:
+    #         if x.abs().max() > audio_normalize_threshold:
+    #             x /= x.abs().max()
 
     if mono and x.shape[0] > 1:
         x = x.mean(dim=0).unsqueeze(0)
-        if normalize:
-            if x.abs().max() > audio_normalize_threshold:
-                x /= x.abs().max()
+        # if normalize:
+        #     if x.abs().max() > audio_normalize_threshold:
+        #         x /= x.abs().max()
 
     if sample_rate:
         if sr != sample_rate:
@@ -157,7 +158,9 @@ def find_island_idx_len(x):
     return idx, dur, x[i]
 
 
-def load_config(path=None, args=None, format="dict"):
+def load_config(
+    path=None, args=None, format="dict"
+) -> Union[Dict[str, Any],]:
     conf = OmegaConf.load(path)
     if args is not None:
         conf = OmegaConfArgs.update_conf_with_args(conf, args)
@@ -227,5 +230,3 @@ def sph2pipe_to_wav(sph_file):
     wav_file = sph_file.replace(".sph", ".wav")
     subprocess.check_call(["sph2pipe", sph_file, wav_file])
     return wav_file
-
-
