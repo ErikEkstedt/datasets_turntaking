@@ -144,7 +144,7 @@ class Swithchboard(datasets.GeneratorBasedBuilder):
                 "session": session,
                 "dataset": "switchboard",
                 "audio_path": audio_path,
-                "vad": vad,
+                "vad_list": vad,
                 "dialog": dialog,
             }
 

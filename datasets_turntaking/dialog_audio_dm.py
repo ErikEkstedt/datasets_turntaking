@@ -149,8 +149,8 @@ class DialogAudioDM(pl.LightningDataModule):
             dset_names.append(b["dataset"])
             sessions.append(b["session"])
 
-            if "vad" in b:
-                vad.append(b["vad"])
+            if "vad_list" in b:
+                vad.append(b["vad_list"])
 
             if "vad_history" in b:
                 vad_history.append(b["vad_history"])

@@ -1,4 +1,5 @@
 from os.path import join
+from os import walk
 import re
 
 from datasets_turntaking.utils import read_txt
@@ -138,11 +139,11 @@ def extract_vad_list_from_words(anno, min_word_diff=0.05):
                     e = w["end"]
                     # print('joint')
                 else:
-                    vad[channel].append((s, e))
+                    vad[channel].append((round(s, 2), round(e)))
                     # update
                     s = w["start"]
                     e = w["end"]
-            vad[channel].append((s, e))
+            vad[channel].append((round(s, 2), round(e, 2)))
     return vad
 
 

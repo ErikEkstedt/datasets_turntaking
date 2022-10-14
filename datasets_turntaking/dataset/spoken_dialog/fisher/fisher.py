@@ -1,8 +1,13 @@
 import datasets
 from datasets import Value, Sequence
 from typing import List
-from os.path import expanduser, join
-from .utils import extract_vad_list, get_paths, load_transcript
+from os.path import expanduser, exists, join
+from .utils import (
+    extract_vad_list,
+    extract_vad_list_from_words,
+    get_data_paths,
+    load_transcript,
+)
 from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 
 logger = datasets.logging.get_logger(__name__)
@@ -14,8 +19,7 @@ Fisher English Training Speech Part 1 Speech represents the first half of a
 collection of conversational telephone speech (CTS) that was created at the LDC
 during 2003. It contains 5,850 audio files, each one containing a full
 conversation of up to 10 minutes. Additional information regarding the speakers
-involved and types of telephones used can be found in the companion text corpus
-of transcripts, Fisher English Training Speech Part 1, Transcripts
+involved and types of telephones used can be found in the companion text corpus of transcripts, Fisher English Training Speech Part 1, Transcripts
 (LDC2004T19).
 """
 
@@ -27,19 +31,23 @@ class FisherConfig(datasets.BuilderConfig):
     def __init__(
         self,
         root=join(expanduser("~"), "projects/data/Fisher"),
-        train_sessions=[str(i) for i in range(1, 5100)],
-        val_sessions=[str(i) for i in range(5100, 5500)],
-        test_sessions=[str(i) for i in range(5500, TOTAL_FILES + 1)],
-        apply_regexp=True,
-        remove_restarts=False,  # "h-" -> "" if True
-        ext=".wav",
+        word_level_transcripts=join(
+            expanduser("~"), "projects/data/Fisher/fisher_transcripts_word_level"
+        ),
+        min_word_vad_diff: float = 0.05,
+        apply_regexp: bool = True,
+        remove_restarts: bool = False,  # "h-" -> "" if True
+        train_sessions: List[str] = [str(i) for i in range(1, 5100)],
+        val_sessions: List[str] = [str(i) for i in range(5100, 5500)],
+        test_sessions: List[str] = [str(i) for i in range(5500, TOTAL_FILES + 1)],
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.root = root
-        self.ext = ext
+        self.word_level_transcripts = word_level_transcripts
         self.apply_regexp = apply_regexp
         self.remove_restarts = remove_restarts
+        self.min_word_vad_diff = min_word_vad_diff
         self.train_sessions = train_sessions
         self.val_sessions = val_sessions
         self.test_sessions = test_sessions
@@ -82,21 +90,26 @@ class Fisher(datasets.GeneratorBasedBuilder):
 
     def generate(self, sessions):
         for n in sessions:
-            session = str(n).zfill(5)
-            trans_path, audio_path = get_paths(
-                session, self.config.root, ext=self.config.ext
-            )
+            nnn = str(n).zfill(5)
+            paths = get_data_paths(nnn=nnn, root=self.config.root)
             dialog = load_transcript(
-                trans_path,
+                paths["utterance"],
                 apply_regexp=self.config.apply_regexp,
                 remove_restarts=self.config.remove_restarts,
             )
-            vad = extract_vad_list(dialog)
-            yield f"{session}", {
-                "session": session,
+            vad_list = extract_vad_list_from_words(
+                nnn=nnn,
+                root=self.config.root,
+                min_word_vad_diff=self.config.min_word_vad_diff,
+            )
+            if vad_list is None:
+                vad_list = extract_vad_list(dialog)
+
+            yield f"{nnn}", {
+                "session": nnn,
                 "dataset": "fisher",
-                "audio_path": audio_path,
-                "vad": vad,
+                "audio_path": paths["audio"],
+                "vad_list": vad_list,
                 "dialog": dialog,
             }
 

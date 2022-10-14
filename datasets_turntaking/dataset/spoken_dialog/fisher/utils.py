@@ -1,13 +1,129 @@
 import torch
-from os.path import join
+from os.path import join, exists
 import re
 from datasets_turntaking.utils import read_txt
+from typing import Dict, List, Union
 
+
+"""
+
+1. Download audio data
+2. Download transcript data
+3. Extract into $FISHER_DATA_ROOT
+4. Convert all audio '.sph' files to '.wav'
+
+
+Fisher Audio files are downloaded in two files from LDC 
+1. `fisher_eng_tr_sp_LDC2004S13.zip.001`,
+2. `fisher_eng_tr_sp_LDC2004S13.zip.002`
+and concatenated to a single file: `cat fisher_eng_tr_sp_LDC2004S13.zip.00* > fisher.zip`
+which is then extracted into $FISHER_DATA_ROOT to produce the following structure:
+
+$FISHER_DATA_ROOT/
+└── fisher_eng_tr_sp_d1
+    └── audio
+        ├── ...
+        └── 000
+            ├── fe_03_00001.wav
+            └── ...
+
+The transcripts are downloaded as `fe_03_p1_tran_LDC2004T19.tgz` and extracted to $FISHER_DATA_ROOT
+to produce the following structure:
+
+$FISHER_TRANS_ROOT/
+└── fe_03_p1_tran
+    └── data
+        ├── bbn_orig
+        │   ├── ...
+        │   └── 058
+        └── trans
+            └── 000
+                ├── fe_03_00001.txt
+                └── ...
+"""
 
 SPEAKER2CHANNEL = {"A": 0, "B": 1}
 
+REL_TRANSCRIPT_ROOT = "fe_03_p1_tran/data/trans"
+REL_WORD_LEVEL_ROOT = "fisher_transcripts_word_level"
 
-# TODO:Specific cleaning of text?
+
+def get_data_paths(nnn: str, root: str) -> Dict:
+    sub_dir = nnn[:3]
+    n = int(nnn)
+    audio_dir_num = 1
+    if n >= 800:
+        audio_dir_num = (n - 800) // 900 + 2
+    audio_path = join(
+        root,
+        f"fisher_eng_tr_sp_d{audio_dir_num}",
+        "audio",
+        sub_dir,
+        f"fe_03_{nnn}.wav",
+    )
+    trans_path = join(root, REL_TRANSCRIPT_ROOT, sub_dir, f"fe_03_{nnn}.txt")
+    word_path_a = join(root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_A_words.txt")
+    word_path_b = join(root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_B_words.txt")
+    return {
+        "audio": audio_path,
+        "utterance": trans_path,
+        "word": {"A": word_path_a, "B": word_path_b},
+    }
+
+
+def extract_channel_dialog(
+    path: str, ipu_thresh: float = 0.05
+) -> List[Dict[str, Union[int, float, str]]]:
+    transcript = read_txt(path)
+    tmp_dialog = []
+    # First entry
+    start, end, word = transcript[0].split()
+    start = float(start)
+    end = float(end)
+    last_end = end
+    entry = {"start": start, "end": end, "text": word}
+    for start_end_word in transcript[1:]:
+        start, end, word = start_end_word.split()
+        start = float(start)
+        end = float(end)
+        if start - last_end < ipu_thresh:
+            # concatenate with previous
+            entry["text"] += " " + word
+            entry["end"] = end
+        else:
+            # New entry
+            tmp_dialog.append(entry)
+            entry = {"start": start, "end": end, "text": word}
+        last_end = end
+    # Add last entry
+    tmp_dialog.append(entry)
+    return tmp_dialog
+
+
+def extract_vad_list_from_words(nnn, root, min_word_vad_diff=0.05):
+    paths = get_data_paths(nnn, root)
+    if not (exists(paths["word"]["A"]) and exists(paths["word"]["B"])):
+        return None
+    utt_a = read_txt(paths["word"]["A"])
+    utt_b = read_txt(paths["word"]["B"])
+    vad_list = [[], []]
+    for channel, utterances in enumerate([utt_a, utt_b]):
+        start, end, _ = utterances[0].split()
+        start, end = float(start), float(end)
+        for start_end_word in utterances[1:]:
+            s, e, _ = start_end_word.split()
+            s, e = float(s), float(e)
+            if s - end < min_word_vad_diff:
+                end = e
+            else:
+                vad_list[channel].append((round(start, 2), round(end, 2)))
+                start = s
+                end = e
+        # add last entry
+        vad_list[channel].append((start, end))
+    return vad_list
+
+
 def fisher_regexp(s, remove_restarts=False):
     """
     See information about annotations at:
@@ -66,28 +182,6 @@ def fisher_regexp(s, remove_restarts=False):
     # remove double spacing on last
     s = re.sub(r"\s\s+", " ", s)
     return s.strip()  # remove whitespace start/end
-
-
-def get_audio_path(nnn, root, ext=".sph"):
-    dir = nnn[:3]
-    n = int(nnn)
-    if n < 800:
-        d = 1
-    else:
-        a = n - 800
-        d = a // 900 + 2
-    return join(root, f"fisher_eng_tr_sp_d{d}/audio/{dir}/fe_03_{nnn}{ext}")
-
-
-def get_transcript_path(nnn, root):
-    dir = nnn[:3]
-    return join(root, "fe_03_p1_tran/data/trans", f"{dir}/fe_03_{nnn}.txt")
-
-
-def get_paths(nnn, root, ext=".sph"):
-    audio_path = get_audio_path(nnn, root, ext=ext)
-    transcript = get_transcript_path(nnn, root)
-    return transcript, audio_path
 
 
 def load_transcript(path, apply_regexp=True, remove_restarts=False):
@@ -158,29 +252,43 @@ def get_text_context(dialog, end, start=0):
 if __name__ == "__main__":
 
     root = "/home/erik/projects/data/Fisher"
+
+    vad_list = extract_vad_list_from_words(nnn, root=root, min_word_vad_diff=0.05)
+
+    # Session names in Fisher
     nnn = "00001"
+    paths = get_data_paths(nnn, root)
+    dialog = load_transcript(paths["utterance"])
+
+    # dialog = [[A-dialog], [B-dialog]]
+    a = dialog[0]
+
+    a_utterances = extract_channel_dialog(paths["word"]["A"], ipu_thresh=0.05)
+    b_utterances = extract_channel_dialog(paths["word"]["B"], ipu_thresh=0.05)
+
     trans_path, audio_path = get_paths(nnn, root, ext=".sph")
 
     anno = load_transcript(trans_path)
+
     # audio = load_waveform(audio_path) # can't load .sph with torchaudio
-    vad = extract_vad_list(anno)
+    vad_list = extract_vad_list(anno)
 
-    p1 = get_audio_path("00001", root)
-    p2 = get_audio_path("05100", root)
-    p3 = get_audio_path("05300", root)
-
-    s = "hello [noise] are [laughter] (( uh-huh )) you (( watching tv on )) m._t._v. (( oh that's not old ))"
-    s = "h- he- hello uh-huh ver-"
-    # s = "hello [noise] how [laughter] are (( ))"
-    # s = re.sub(r"\(\(((\s\w*)+)\)\)", r"\1", s)
-    # s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
+    # p1 = get_audio_path("00001", root)
+    # p2 = get_audio_path("05100", root)
+    # p3 = get_audio_path("05300", root)
+    #
+    # s = "hello [noise] are [laughter] (( uh-huh )) you (( watching tv on )) m._t._v. (( oh that's not old ))"
+    # s = "h- he- hello uh-huh ver-"
+    # # s = "hello [noise] how [laughter] are (( ))"
+    # # s = re.sub(r"\(\(((\s\w*)+)\)\)", r"\1", s)
+    # # s = re.sub(r"\(\(((.*?)+)\)\)", r"\1", s)
+    # # print(s)
+    # s = fisher_regexp(s, True)
     # print(s)
-    s = fisher_regexp(s, True)
-    print(s)
-
-    # s = "cette plus facile (( au senegal aussi parce que je pouvais ))"
-    s = "'(( demander beaucoup (( )) parce que ))'"
-    # s = "'(( demander beaucoup (( bla )) parce que ))'"
-    # s = 'demander beaucoup (( parce que ))'
-    d = fisher_regexp(s)
-    print(d)
+    #
+    # # s = "cette plus facile (( au senegal aussi parce que je pouvais ))"
+    # s = "'(( demander beaucoup (( )) parce que ))'"
+    # # s = "'(( demander beaucoup (( bla )) parce que ))'"
+    # # s = 'demander beaucoup (( parce que ))'
+    # d = fisher_regexp(s)
+    # print(d)

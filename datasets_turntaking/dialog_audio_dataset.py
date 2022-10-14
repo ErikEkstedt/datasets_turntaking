@@ -267,6 +267,13 @@ def get_vad(
     return va, vah
 
 
+def waveform_mask_with_vad(waveform, vad, scale=0.1, frame_hz=50, sample_rate=16000):
+    v_mask = vad.permute(0, 2, 1)
+    v_mask = AF.resample(v_mask, orig_freq=frame_hz, new_freq=sample_rate)
+    waveform = waveform * v_mask * scale
+    return waveform
+
+
 class DialogAudioDataset(Dataset):
     def __init__(
         self,
@@ -427,7 +434,7 @@ class DialogAudioDataset(Dataset):
         # VAD-frame of relevant part
         if self.vad:
             va, vah = get_vad(
-                vad_list=b["vad"],
+                vad_list=b["vad_list"],
                 duration=duration,
                 start_time=start_time,
                 end_time=end_time,
@@ -475,7 +482,8 @@ class DialogAudioDataset(Dataset):
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from datasets_turntaking.features.plot_utils import plot_batch_sample
-    from tqdm import tqdm
+    import torchaudio.functional as AF
+    import sounddevice as sd
 
     dset_hf = load_spoken_dialog_audio_dataset(["fisher"], split="val")
     dset = DialogAudioDataset(
@@ -487,19 +495,21 @@ if __name__ == "__main__":
     for i in range(10):
         idx = int(torch.randint(0, len(dset), (1,)).item())
         batch = dset[idx]
+        # batch['waveform'] = waveform_mask_with_vad(batch['waveform'], batch['vad'][:, :-100])
         fig, ax = plot_batch_sample(
             waveform=batch["waveform"][0],
             vad=batch["vad"][0, :-100],
             sample_rate=dset.sample_rate,
             plot=False,
         )
+        sd.play(batch["waveform"][0].t().numpy(), samplerate=16000)
         plt.show()
 
     # Prepare for vad extraction
     idx = 0
     dset_idx = dset.map_to_dset_idx[idx]
     b = dset.dataset[dset_idx]
-    vad_list = b["vad"]
+    vad_list = b["vad_list"]
     duration = get_audio_info(b["audio_path"])["duration"]
     # batch = dset[100]
     # print("batch: ", batch.keys())

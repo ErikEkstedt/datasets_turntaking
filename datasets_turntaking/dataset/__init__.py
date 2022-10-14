@@ -5,7 +5,7 @@ DIALOG_AUDIO_FEATURES = {
     "dataset": Value("string"),
     "session": Value("string"),
     "audio_path": Value("string"),
-    "vad": [[Sequence(Value("float"))]],
+    "vad_list": [[Sequence(Value("float"))]],
     "dialog": [
         Sequence(
             {
