@@ -2,7 +2,7 @@ import torch
 from os.path import join, exists
 import re
 from datasets_turntaking.utils import read_txt
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
 
 """
@@ -45,10 +45,10 @@ $FISHER_TRANS_ROOT/
 SPEAKER2CHANNEL = {"A": 0, "B": 1}
 
 REL_TRANSCRIPT_ROOT = "fe_03_p1_tran/data/trans"
-REL_WORD_LEVEL_ROOT = "fisher_transcripts_word_level"
+REL_WORD_LEVEL_ROOT = "fisher_word_level_w2v"
 
 
-def get_data_paths(nnn: str, root: str) -> Dict:
+def get_data_paths(nnn: str, root: str, word_level_root: Optional[str] = None) -> Dict:
     sub_dir = nnn[:3]
     n = int(nnn)
     audio_dir_num = 1
@@ -61,9 +61,19 @@ def get_data_paths(nnn: str, root: str) -> Dict:
         sub_dir,
         f"fe_03_{nnn}.wav",
     )
+
     trans_path = join(root, REL_TRANSCRIPT_ROOT, sub_dir, f"fe_03_{nnn}.txt")
-    word_path_a = join(root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_A_words.txt")
-    word_path_b = join(root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_B_words.txt")
+    if word_level_root is None:
+        word_path_a = join(
+            root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_A_words.txt"
+        )
+        word_path_b = join(
+            root, REL_WORD_LEVEL_ROOT, sub_dir, f"fe_03_{nnn}_B_words.txt"
+        )
+    else:
+        word_path_a = join(word_level_root, sub_dir, f"fe_03_{nnn}_A_words.txt")
+        word_path_b = join(word_level_root, sub_dir, f"fe_03_{nnn}_B_words.txt")
+
     return {
         "audio": audio_path,
         "utterance": trans_path,
@@ -100,8 +110,10 @@ def extract_channel_dialog(
     return tmp_dialog
 
 
-def extract_vad_list_from_words(nnn, root, min_word_vad_diff=0.05):
-    paths = get_data_paths(nnn, root)
+def extract_vad_list_from_words(
+    nnn, root, min_word_vad_diff=0.05, word_level_root: Optional[str] = None
+):
+    paths = get_data_paths(nnn, root, word_level_root=word_level_root)
     if not (exists(paths["word"]["A"]) and exists(paths["word"]["B"])):
         return None
     utt_a = read_txt(paths["word"]["A"])

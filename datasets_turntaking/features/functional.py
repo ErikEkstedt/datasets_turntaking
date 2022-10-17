@@ -2,6 +2,8 @@ import torch
 import torch.nn.functional as F
 import torchaudio.functional as AF
 
+import einops
+
 
 SAMPLE_RATE: int = 16_000
 HOP_LENGTH: int = 320  # 0.02s @ 16khz
@@ -20,10 +22,19 @@ def mask_around_vad(
     ), f"Expects vad of shape (B, N_FRAMES, 2) but got {vad.shape}"
 
     v_mask = vad.permute(0, 2, 1)
-    if vad_hz != sample_rate:
-        v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
 
-    waveform = waveform * v_mask[:, :, : waveform.shape[-1]] * scale
+    B, C, _ = waveform.shape
+    if B > 1 and C > 1:
+        w_tmp = einops.rearrange(waveform, "b c s -> (b c) s")
+        v_mask = einops.rearrange(v_mask, "b c f -> (b c) f")
+        if vad_hz != sample_rate:
+            v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
+        w_tmp = w_tmp * v_mask[:, : w_tmp.shape[-1]] * scale
+        waveform = einops.rearrange(w_tmp, "(b c) s -> b c s", b=B, c=C)
+    else:
+        if vad_hz != sample_rate:
+            v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
+        waveform = waveform * v_mask[:, :, : waveform.shape[-1]] * scale
     return waveform
 
 
@@ -205,7 +216,7 @@ def __lpc(y: torch.Tensor, order) -> torch.Tensor:
         # q = dtype(1) - reflect_coeff ** 2
         # den = q * den - bwd_pred_error[-1] ** 2 - fwd_pred_error[0] ** 2
 
-        q = 1.0 - reflect_coeff**2
+        q = 1.0 - reflect_coeff ** 2
         den = q * den - bwd_pred_error[..., -1] ** 2 - fwd_pred_error[..., 0] ** 2
 
         # Shift up forward error.

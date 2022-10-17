@@ -1,7 +1,6 @@
 import datasets
-from datasets import Value, Sequence
-from typing import List
-from os.path import expanduser, exists, join
+from datasets import Sequence
+from os.path import expanduser, join
 from .utils import (
     extract_vad_list,
     extract_vad_list_from_words,
@@ -9,6 +8,9 @@ from .utils import (
     load_transcript,
 )
 from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
+
+import typing
+from typing import List
 
 logger = datasets.logging.get_logger(__name__)
 
@@ -30,11 +32,11 @@ TOTAL_FILES = 5850
 class FisherConfig(datasets.BuilderConfig):
     def __init__(
         self,
-        root=join(expanduser("~"), "projects/data/Fisher"),
-        word_level_transcripts=join(
-            expanduser("~"), "projects/data/Fisher/fisher_transcripts_word_level"
+        root: str = join(expanduser("~"), "projects/data/Fisher"),
+        word_level_root: str = join(
+            expanduser("~"), "projects/data/Fisher/fisher_word_level_montreal"
         ),
-        min_word_vad_diff: float = 0.05,
+        min_word_vad_diff: float = 0.1,
         apply_regexp: bool = True,
         remove_restarts: bool = False,  # "h-" -> "" if True
         train_sessions: List[str] = [str(i) for i in range(1, 5100)],
@@ -42,12 +44,13 @@ class FisherConfig(datasets.BuilderConfig):
         test_sessions: List[str] = [str(i) for i in range(5500, TOTAL_FILES + 1)],
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        # super().__init__(name, version, data_dir, data_files, description)
+        super(FisherConfig, self).__init__(**kwargs)
         self.root = root
-        self.word_level_transcripts = word_level_transcripts
+        self.word_level_root = word_level_root
+        self.min_word_vad_diff = min_word_vad_diff
         self.apply_regexp = apply_regexp
         self.remove_restarts = remove_restarts
-        self.min_word_vad_diff = min_word_vad_diff
         self.train_sessions = train_sessions
         self.val_sessions = val_sessions
         self.test_sessions = test_sessions
@@ -56,9 +59,11 @@ class FisherConfig(datasets.BuilderConfig):
 class Fisher(datasets.GeneratorBasedBuilder):
     VERSION = datasets.Version("0.0.1")
     DEFAULT_CONFIG_NAME = "default"
+    BUILDER_CONFIG_CLASS = FisherConfig
     BUILDER_CONFIGS = [
         FisherConfig(
             name="default",
+            version=datasets.Version("0.0.1"),
             description="Fisher speech dataset",
         )
     ]
@@ -101,6 +106,7 @@ class Fisher(datasets.GeneratorBasedBuilder):
                 nnn=nnn,
                 root=self.config.root,
                 min_word_vad_diff=self.config.min_word_vad_diff,
+                word_level_root=self.config.word_level_root,
             )
             if vad_list is None:
                 vad_list = extract_vad_list(dialog)

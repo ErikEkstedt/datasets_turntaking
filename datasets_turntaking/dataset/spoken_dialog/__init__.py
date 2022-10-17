@@ -31,6 +31,7 @@ def load_switchboard(
     split="train",
     omit_overlap_within=True,
     omit_backchannels=False,
+    min_word_vad_diff=0.05,
     num_proc=None,
     load_from_cache_file=True,
     format_turns=False,
@@ -39,7 +40,8 @@ def load_switchboard(
     if split == "val":
         split = "validation"
 
-    dset = load_dataset(DSET_PATHS["switchboard"], split=split, **kwargs)
+    swb_kwargs = {"min_word_vad_diff": min_word_vad_diff}
+    dset = load_dataset(DSET_PATHS["switchboard"], split=split, **swb_kwargs)
 
     if format_turns:
         num_proc = num_proc if num_proc is not None else cpu_count()
@@ -63,13 +65,18 @@ def load_fisher(
     omit_backchannels=False,
     num_proc=None,
     load_from_cache_file=True,
+    word_level_root=None,
+    min_word_vad_diff=0.05,
     format_turns=False,
-    **kwargs
 ):
     if split == "val":
         split = "validation"
 
-    dset = load_dataset(DSET_PATHS["fisher"], split=split, **kwargs)
+    fisher_kwargs = {"min_word_vad_diff": min_word_vad_diff}
+    if word_level_root is not None:
+        fisher_kwargs["word_level_root"] = word_level_root
+
+    dset = load_dataset(DSET_PATHS["fisher"], split=split, **fisher_kwargs)
     if format_turns:
         num_proc = num_proc if num_proc is not None else cpu_count()
         dset = dset.map(

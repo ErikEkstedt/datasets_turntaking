@@ -36,6 +36,8 @@ class DialogAudioDM(pl.LightningDataModule):
         vad_history: bool = False,
         vad_history_times: List[int] = [60, 30, 10, 5],
         flip_channels: bool = True,
+        mask_vad: bool = False,
+        mask_vad_probability: float = 0.5,
         batch_size: int = 4,
         num_workers: int = 0,
         pin_memory: bool = True,
@@ -68,7 +70,11 @@ class DialogAudioDM(pl.LightningDataModule):
         self.vad_horizon = vad_horizon
         self.vad_history = vad_history
         self.vad_history_times = vad_history_times
+
+        # Transforms
         self.flip_channels = flip_channels
+        self.mask_vad = mask_vad
+        self.mask_vad_probability = mask_vad_probability
 
         # DataLoder
         self.batch_size = batch_size
@@ -91,12 +97,13 @@ class DialogAudioDM(pl.LightningDataModule):
             audio_overlap=self.audio_overlap,
             audio_normalize=self.audio_normalize,
             sample_rate=self.sample_rate,
-            vad=self.vad,
             vad_hz=self.vad_hz,
             vad_horizon_time=self.vad_horizon,
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
             flip_channels=flip,
+            mask_vad=self.mask_vad,
+            mask_vad_probability=self.mask_vad_probability,
             transforms=self.transforms,
         )
 
@@ -145,7 +152,6 @@ class DialogAudioDM(pl.LightningDataModule):
         dset_names = []
         sessions = []
         for b in batch:
-            print(b["waveform"].shape)
             waveforms.append(b["waveform"])
             dset_names.append(b["dataset"])
             sessions.append(b["session"])
@@ -276,7 +282,7 @@ if __name__ == "__main__":
 
     data_conf = DialogAudioDM.load_config()
     dm = DialogAudioDM(
-        datasets=["switchboard"],
+        datasets=["fisher", "switchboard"],
         type=data_conf["dataset"]["type"],
         sample_rate=data_conf["dataset"]["sample_rate"],
         audio_mono=False,  # data_conf["dataset"]["audio_mono"],
@@ -287,24 +293,17 @@ if __name__ == "__main__":
         vad_horizon=data_conf["dataset"]["vad_horizon"],
         vad_history=False,
         vad_history_times=data_conf["dataset"]["vad_history_times"],
-        batch_size=4,
+        batch_size=16,
         num_workers=cpu_count(),
     )
     dm.prepare_data()
     dm.setup()
     print(dm)
-
-    masker = DT.VadMaskScale(vad_hz=dm.vad_hz, sample_rate=dm.sample_rate)
-
-    batch = next(iter(dm.train_dataloader()))
-
-    print(batch.keys())
-    print(batch["waveform"].shape)
-    print(batch["vad"].shape)
-    w = masker(batch["waveform"], batch["vad"])
+    # batch = next(iter(dm.train_dataloader()))
 
     for i in range(batch["waveform"].shape[0]):
-        plot_batch_sample(waveform=w[i], vad=batch["vad"][i], vad_hz=dm.vad_hz)
+        plot_batch_sample(waveform=w[i], vad=batch["vad"][i, :-100], vad_hz=dm.vad_hz)
+        plt.show()
 
     # print("\nBATCH DATASET")
     # batch = dm.val_dset[0]

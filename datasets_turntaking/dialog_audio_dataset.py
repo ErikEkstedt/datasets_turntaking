@@ -3,6 +3,8 @@ from torch.utils.data import Dataset
 from typing import Any, Callable, Dict, Optional, List, Tuple, Union
 import torch
 
+import datasets_turntaking.features.functional as AF
+
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
 environ["DATASETS_VERBOSITY"] = "error"
@@ -23,7 +25,7 @@ def load_spoken_dialog_audio_dataset(datasets: List[str], split: str, **kwargs):
     dset = []
     for dataset in datasets:
         if dataset == "fisher":
-            dset.append(load_fisher(split=split, format_turns=False))
+            dset.append(load_fisher(split=split, format_turns=False, **kwargs))
         elif dataset == "switchboard":
             dset.append(load_switchboard(split=split, format_turns=False))
     assert (
@@ -277,9 +279,7 @@ class DialogAudioDataset(Dataset):
         sample_rate: int = 16000,
         audio_mono: bool = True,
         audio_duration: int = 10,
-        audio_normalize: bool = True,
-        # VAD #################################
-        vad: bool = True,
+        audio_normalize: bool = True,  # VAD ################################# vad: bool = True,
         vad_hz: int = 50,
         vad_horizon_time: float = 2,
         vad_history: bool = False,
@@ -293,6 +293,8 @@ class DialogAudioDataset(Dataset):
         # DSET #################################
         flip_channels: bool = False,
         flip_probability: float = 0.5,
+        mask_vad: bool = False,
+        mask_vad_probability: float = 0.5,
         transforms: Optional[Callable] = None,
     ):
         super().__init__()
@@ -310,7 +312,7 @@ class DialogAudioDataset(Dataset):
         self.audio_normalize_threshold = 0.05
 
         # VAD parameters
-        self.vad = vad  # use vad or not
+        self.vad = True  # use vad or not
         self.vad_hz = vad_hz
         self.vad_hop_time = 1.0 / vad_hz
 
@@ -330,6 +332,9 @@ class DialogAudioDataset(Dataset):
         # Dset
         self.flip_channels = flip_channels
         self.flip_probability = flip_probability
+
+        self.mask_vad = mask_vad
+        self.mask_vad_probability = mask_vad_probability
 
         self.map_to_dset_idx, self.map_to_start_time = self.get_sample_maps(type)
 
@@ -392,8 +397,9 @@ class DialogAudioDataset(Dataset):
         if "waveform" in batch:
             if batch["waveform"].shape[1] == 2:
                 batch["waveform"] = torch.stack(
-                    (batch["waveform"][:, 1], batch["waveform"][:, 0])
+                    (batch["waveform"][:, 1], batch["waveform"][:, 0]), dim=1
                 )
+
         return batch
 
     def get_sample(
@@ -467,76 +473,52 @@ class DialogAudioDataset(Dataset):
             n_frames = d["vad_history"].shape[1]
             d["waveform"] = self.transforms(d["waveform"], vad=d["vad"][:, :n_frames])
 
-        if self.flip_channels and torch.rand(1) > self.flip_probability:
+        if self.flip_channels and torch.rand(1) <= self.flip_probability:
             d = self.flip_batch(d)
+
+        if self.mask_vad and torch.rand(1) <= self.mask_vad_probability:
+            d["waveform"] = AF.mask_around_vad(
+                d["waveform"],
+                d["vad"],
+                vad_hz=self.vad_hz,
+                sample_rate=self.sample_rate,
+            )
         return d
 
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from datasets_turntaking.features.plot_utils import plot_batch_sample
-    import datasets_turntaking.features.functional as DF
-    import datasets_turntaking.features.transforms as DT
-    import torchaudio.functional as AF
-    import sounddevice as sd
 
-    dset_hf = load_spoken_dialog_audio_dataset(["switchboard"], split="val")
-    dset = DialogAudioDataset(
-        dataset=dset_hf, type="sliding", vad_history=False, vad_hz=50, audio_mono=False
+    dset_hf = load_spoken_dialog_audio_dataset(
+        ["fisher", "switchboard"], split="val", min_word_vad_diff=0.1
     )
-
-    masker = DT.VadMaskScale(scale=0.1, vad_hz=50, sample_rate=16000)
+    dset = DialogAudioDataset(
+        dataset=dset_hf,
+        type="sliding",
+        vad_history=False,
+        vad_hz=50,
+        audio_mono=False,
+        mask_vad=False,
+        mask_vad_probability=0.5,
+    )
 
     print("dset: ", dset)
     print("Length: ", len(dset))
-    for i in range(10):
-        idx = int(torch.randint(0, len(dset), (1,)).item())
+    for idx in range(10):
+        # idx = int(torch.randint(0, len(dset), (1,)).item())
         batch = dset[idx]
         # w = DF.mask_around_vad(
         #     batch["waveform"], batch["vad"][:, :-100], vad_hz=50, sample_rate=16000
         # )
-        w = masker(batch["waveform"], batch["vad"])
+        # w = masker(batch["waveform"], batch["vad"])
         # batch['waveform'] = waveform_mask_with_vad(batch['waveform'], batch['vad'][:, :-100])
         fig, ax = plot_batch_sample(
-            # waveform=batch["waveform"][0],
-            waveform=w[0],
+            waveform=batch["waveform"][0],
+            # waveform=w[0],
             vad=batch["vad"][0, :-100],
             sample_rate=dset.sample_rate,
             plot=False,
         )
         # sd.play(batch["waveform"][0].t().numpy(), samplerate=16000)
         plt.show()
-
-    # Prepare for vad extraction
-    idx = 0
-    dset_idx = dset.map_to_dset_idx[idx]
-    b = dset.dataset[dset_idx]
-    vad_list = b["vad_list"]
-    duration = get_audio_info(b["audio_path"])["duration"]
-    # batch = dset[100]
-    # print("batch: ", batch.keys())
-    # print("batch['waveform']: ", tuple(batch["waveform"].shape))
-    # print("batch['vad']: ", tuple(batch["vad"].shape))
-    # if "vad_history" in batch:
-    #     print("batch['vad_history']: ", tuple(batch["vad_history"].shape))
-    #
-    # for i in range(10):
-    #     batch = dset[i]
-    #     fig, ax = plot_batch_sample(
-    #         waveform=batch["waveform"][0],
-    #         vad=batch["vad"][0, :-100],
-    #         sample_rate=dset.sample_rate,
-    #         plot=False,
-    #     )
-    #     plt.show()
-    # fig, ax = plot_vad_sample(
-    #     waveform=batch["waveform"][0],
-    #     vad=batch["vad"][0].t(),
-    #     vad_current_frame=None,
-    #     vad_bins=256,
-    #     sample_rate=dset.sample_rate,
-    #     ax=None,
-    #     figsize=(16, 5),
-    #     plot=True,
-    # )
-    # sd.play(d["waveform"][0], samplerate=dset.sample_rate)

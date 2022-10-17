@@ -54,39 +54,28 @@ class SwitchboardConfig(datasets.BuilderConfig):
     def __init__(
         self,
         root=join(expanduser("~"), "projects/data/switchboard/audio"),
-        train_sessions=None,
-        val_sessions=None,
-        test_sessions=None,
-        min_word_vad_diff=0.05,
-        remove_restarts=False,  # "h-" -> "" if True
+        train_sessions=read_txt(os.path.join(SPLIT_PATH, "train.txt")),
+        val_sessions=read_txt(os.path.join(SPLIT_PATH, "val.txt")),
+        test_sessions=read_txt(os.path.join(SPLIT_PATH, "test.txt")),
+        min_word_vad_diff: float = 0.1,
+        remove_restarts: bool = False,  # "h-" -> "" if True
         ext=".wav",
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super(SwitchboardConfig, self).__init__(**kwargs)
         self.ext = ext
         self.root = root
         self.min_word_vad_diff = min_word_vad_diff
         self.remove_restarts = remove_restarts
-        self.train_sessions = (
-            read_txt(os.path.join(SPLIT_PATH, "train.txt"))
-            if train_sessions is None
-            else train_sessions
-        )
-        self.val_sessions = (
-            read_txt(os.path.join(SPLIT_PATH, "val.txt"))
-            if val_sessions is None
-            else val_sessions
-        )
-        self.test_sessions = (
-            read_txt(os.path.join(SPLIT_PATH, "test.txt"))
-            if test_sessions is None
-            else test_sessions
-        )
+        self.train_sessions = train_sessions
+        self.val_sessions = val_sessions
+        self.test_sessions = test_sessions
 
 
 class Swithchboard(datasets.GeneratorBasedBuilder):
     VERSION = datasets.Version("0.0.1")
     DEFAULT_CONFIG_NAME = "default"
+    BUILDER_CONFIG_CLASS = SwitchboardConfig
     BUILDER_CONFIGS = [
         SwitchboardConfig(
             name="default",
