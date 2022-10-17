@@ -16,3 +16,7 @@ dataset:
   vad_horizon: 2
   vad_history: true
   vad_history_times: [60, 30, 10, 5]
+  flip_channels: true
+  flip_probability: 0.5
+  mask_vad: true
+  mask_vad_probability: 0.3
