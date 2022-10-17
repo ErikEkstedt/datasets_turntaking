@@ -1,15 +1,45 @@
 import torch
 import torch.nn.functional as F
+import torchaudio.functional as AF
 
 
-def zero_crossings(y):
+SAMPLE_RATE: int = 16_000
+HOP_LENGTH: int = 320  # 0.02s @ 16khz
+FRAME_LENGTH: int = 800  # 0.05s @ 16khz
+
+
+def mask_around_vad(
+    waveform: torch.Tensor,
+    vad: torch.Tensor,
+    vad_hz: int,
+    sample_rate: int = SAMPLE_RATE,
+    scale: float = 0.1,
+) -> torch.Tensor:
+    assert (
+        vad.shape[-1] == 2
+    ), f"Expects vad of shape (B, N_FRAMES, 2) but got {vad.shape}"
+
+    v_mask = vad.permute(0, 2, 1)
+    if vad_hz != sample_rate:
+        v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
+
+    waveform = waveform * v_mask[:, :, : waveform.shape[-1]] * scale
+    return waveform
+
+
+def zero_crossings(y: torch.Tensor) -> torch.Tensor:
     s = torch.signbit(y)
     s = s[..., :-1] != s[..., 1:]
     z = torch.zeros_like(s[..., :1])
     return torch.cat((z, s), dim=-1)
 
 
-def zero_crossing_rate(y, frame_length, hop_length, center=True):
+def zero_crossing_rate(
+    y: torch.Tensor,
+    frame_length: int = FRAME_LENGTH,
+    hop_length: int = HOP_LENGTH,
+    center: bool = True,
+) -> torch.Tensor:
     if center:
         pad = int(frame_length // 2)
         y = F.pad(y, (pad, pad))
@@ -18,7 +48,13 @@ def zero_crossing_rate(y, frame_length, hop_length, center=True):
     return cross.float().mean(dim=-1)
 
 
-def rms_torch(y, frame_length, hop_length, center=True, mode="reflect"):
+def rms_torch(
+    y: torch.Tensor,
+    frame_length: int = FRAME_LENGTH,
+    hop_length: int = HOP_LENGTH,
+    center: bool = True,
+    mode: str = "reflect",
+) -> torch.Tensor:
     if center:
         pad = int(frame_length // 2)
         if mode == "reflect":
@@ -36,7 +72,13 @@ def rms_torch(y, frame_length, hop_length, center=True, mode="reflect"):
     return rms
 
 
-def lpc_frames(waveform, frame_size, hop_size, padding=True, window=torch.hann_window):
+def lpc_frames(
+    waveform: torch.Tensor,
+    frame_size: int,
+    hop_size: int,
+    padding: bool = True,
+    window=torch.hann_window,
+) -> torch.Tensor:
     if padding:
         # pad before to not 'overlook' into the future
         waveform = F.pad(waveform, (frame_size, 0), "constant", 0.0)
@@ -163,7 +205,7 @@ def __lpc(y: torch.Tensor, order) -> torch.Tensor:
         # q = dtype(1) - reflect_coeff ** 2
         # den = q * den - bwd_pred_error[-1] ** 2 - fwd_pred_error[0] ** 2
 
-        q = 1.0 - reflect_coeff ** 2
+        q = 1.0 - reflect_coeff**2
         den = q * den - bwd_pred_error[..., -1] ** 2 - fwd_pred_error[..., 0] ** 2
 
         # Shift up forward error.
@@ -179,9 +221,9 @@ def __lpc(y: torch.Tensor, order) -> torch.Tensor:
 
 
 def __window_frames(
-    x,
-    frame_length: int = 640,
-    hop_length: int = 160,
+    x: torch.Tensor,
+    frame_length: int = FRAME_LENGTH,
+    hop_length: int = HOP_LENGTH,
     padding: bool = True,
     window=torch.hann_window,
 ) -> torch.Tensor:
@@ -198,8 +240,8 @@ def __window_frames(
 def lpc(
     waveform: torch.Tensor,
     order: int = 2,
-    frame_length: int = 640,
-    hop_length: int = 160,
+    frame_length: int = FRAME_LENGTH,
+    hop_length: int = HOP_LENGTH,
     padding: bool = True,
     window=torch.hann_window,
 ) -> torch.Tensor:

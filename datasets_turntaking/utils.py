@@ -11,19 +11,19 @@ import torchaudio.functional as AF
 from torchaudio.backend.sox_io_backend import info as info_sox
 
 
-def samples_to_frames(s, hop_len):
+def samples_to_frames(s: int, hop_len: float) -> int:
     return int(s / hop_len)
 
 
-def sample_to_time(n_samples, sample_rate):
-    return n_samples / sample_rate
+def sample_to_time(n_samples: int, sample_rate: int) -> float:
+    return float(n_samples) / sample_rate
 
 
-def frames_to_time(f, hop_time):
+def frames_to_time(f: float, hop_time: float) -> float:
     return f * hop_time
 
 
-def time_to_frames(t, hop_time):
+def time_to_frames(t: float, hop_time: float) -> int:
     return int(t / hop_time)
 
 
@@ -31,7 +31,7 @@ def time_to_frames_samples(t: float, sample_rate: int, hop_length: int) -> int:
     return int(t * sample_rate / hop_length)
 
 
-def time_to_samples(t: float, sample_rate: int) -> float:
+def time_to_samples(t: float, sample_rate: int) -> int:
     return int(t * sample_rate)
 
 

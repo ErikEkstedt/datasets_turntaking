@@ -145,12 +145,13 @@ class DialogAudioDM(pl.LightningDataModule):
         dset_names = []
         sessions = []
         for b in batch:
+            print(b["waveform"].shape)
             waveforms.append(b["waveform"])
             dset_names.append(b["dataset"])
             sessions.append(b["session"])
 
-            if "vad_list" in b:
-                vad.append(b["vad_list"])
+            if "vad" in b:
+                vad.append(b["vad"])
 
             if "vad_history" in b:
                 vad_history.append(b["vad_history"])
@@ -268,22 +269,23 @@ class DialogAudioDM(pl.LightningDataModule):
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
-    from datasets_turntaking.features.plot_utils import plot_batch_sample
     from tqdm import tqdm
 
-    data_conf = DialogAudioDM.load_config()
+    from datasets_turntaking.features.plot_utils import plot_batch_sample
+    import datasets_turntaking.features.transforms as DT
 
+    data_conf = DialogAudioDM.load_config()
     dm = DialogAudioDM(
         datasets=["switchboard"],
         type=data_conf["dataset"]["type"],
         sample_rate=data_conf["dataset"]["sample_rate"],
-        audio_mono=data_conf["dataset"]["audio_mono"],
+        audio_mono=False,  # data_conf["dataset"]["audio_mono"],
         audio_duration=data_conf["dataset"]["audio_duration"],
         audio_normalize=data_conf["dataset"]["audio_normalize"],
         audio_overlap=data_conf["dataset"]["audio_overlap"],
         vad_hz=data_conf["dataset"]["vad_hz"],
         vad_horizon=data_conf["dataset"]["vad_horizon"],
-        vad_history=True,
+        vad_history=False,
         vad_history_times=data_conf["dataset"]["vad_history_times"],
         batch_size=4,
         num_workers=cpu_count(),
@@ -291,6 +293,18 @@ if __name__ == "__main__":
     dm.prepare_data()
     dm.setup()
     print(dm)
+
+    masker = DT.VadMaskScale(vad_hz=dm.vad_hz, sample_rate=dm.sample_rate)
+
+    batch = next(iter(dm.train_dataloader()))
+
+    print(batch.keys())
+    print(batch["waveform"].shape)
+    print(batch["vad"].shape)
+    w = masker(batch["waveform"], batch["vad"])
+
+    for i in range(batch["waveform"].shape[0]):
+        plot_batch_sample(waveform=w[i], vad=batch["vad"][i], vad_hz=dm.vad_hz)
 
     # print("\nBATCH DATASET")
     # batch = dm.val_dset[0]
@@ -305,11 +319,12 @@ if __name__ == "__main__":
     #     vad_hz=dm.vad_hz,
     # )
 
-    print("\nBATCH DATALOADER")
+    # print("\nBATCH DATALOADER")
     # batch = next(iter(dm.val_dataloader()))
 
-    for batch in tqdm(dm.val_dataloader()):
-        continue
+    # for batch in tqdm(dm.val_dataloader()):
+    #     continue
+
     # for k, v in batch.items():
     #     if isinstance(v, torch.Tensor):
     #         print(f"{k}: {tuple(v.shape)}")

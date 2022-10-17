@@ -4,7 +4,7 @@ import torchaudio.transforms as AT
 import einops
 
 from datasets_turntaking.utils import time_to_samples
-from datasets_turntaking.features.functional import rms_torch, zero_crossing_rate, lpc
+import datasets_turntaking.features.functional as DF
 
 
 class ProsodyTorch(nn.Module):
@@ -108,7 +108,7 @@ class ProsodyTorch(nn.Module):
         return mfcc[..., 1:]
 
     def lpc(self, waveform):
-        return lpc(
+        return DF.lpc(
             waveform,
             order=self.lpc_order,
             frame_length=self.frame_length,
@@ -121,7 +121,7 @@ class ProsodyTorch(nn.Module):
         features = []
         # RMS (Intensity/Loudness ?)
         features.append(
-            rms_torch(
+            DF.rms_torch(
                 waveform,
                 frame_length=self.frame_length,
                 hop_length=self.hop_length,
@@ -131,7 +131,7 @@ class ProsodyTorch(nn.Module):
         )
         # Zero Crossing Rate
         features.append(
-            zero_crossing_rate(
+            DF.zero_crossing_rate(
                 waveform,
                 frame_length=self.frame_length,
                 hop_length=self.hop_length,
@@ -146,6 +146,28 @@ class ProsodyTorch(nn.Module):
 
         features = torch.cat(features, dim=-1)
         return features
+
+
+class VadMaskScale(nn.Module):
+    def __init__(
+        self,
+        scale: float = 0.1,
+        vad_hz: int = 50,
+        sample_rate: int = 16000,
+    ):
+        super().__init__()
+        self.scale = scale
+        self.vad_hz = vad_hz
+        self.sample_rate = sample_rate
+
+    def forward(self, x: torch.Tensor, vad: torch.Tensor):
+        return DF.mask_around_vad(
+            waveform=x,
+            vad=vad,
+            vad_hz=self.vad_hz,
+            sample_rate=self.sample_rate,
+            scale=self.scale,
+        )
 
 
 if __name__ == "__main__":
