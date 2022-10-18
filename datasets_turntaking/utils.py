@@ -8,7 +8,6 @@ from typing import Any, Dict, Union, Optional, Tuple
 import torch
 import torchaudio
 import torchaudio.functional as AF
-from torchaudio.backend.sox_io_backend import info as info_sox
 
 
 def samples_to_frames(s: int, hop_len: float) -> int:
@@ -36,7 +35,7 @@ def time_to_samples(t: float, sample_rate: int) -> int:
 
 
 def get_audio_info(audio_path: str) -> Dict[str, Any]:
-    info = info_sox(audio_path)
+    info = torchaudio.info(audio_path)
     return {
         "name": basename(audio_path),
         "duration": sample_to_time(info.num_frames, info.sample_rate),
