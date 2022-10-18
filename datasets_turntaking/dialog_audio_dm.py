@@ -36,6 +36,7 @@ class DialogAudioDM(pl.LightningDataModule):
         vad_history: bool = False,
         vad_history_times: List[int] = [60, 30, 10, 5],
         flip_channels: bool = True,
+        flip_probability: float = 0.5,
         mask_vad: bool = False,
         mask_vad_probability: float = 0.5,
         batch_size: int = 4,
@@ -73,6 +74,7 @@ class DialogAudioDM(pl.LightningDataModule):
 
         # Transforms
         self.flip_channels = flip_channels
+        self.flip_probability = flip_probability
         self.mask_vad = mask_vad
         self.mask_vad_probability = mask_vad_probability
 
@@ -102,6 +104,7 @@ class DialogAudioDM(pl.LightningDataModule):
             vad_history=self.vad_history,
             vad_history_times=self.vad_history_times,
             flip_channels=flip,
+            flip_probability=self.flip_probability,
             mask_vad=self.mask_vad,
             mask_vad_probability=self.mask_vad_probability,
             transforms=self.transforms,
@@ -293,39 +296,16 @@ if __name__ == "__main__":
         vad_horizon=data_conf["dataset"]["vad_horizon"],
         vad_history=False,
         vad_history_times=data_conf["dataset"]["vad_history_times"],
-        batch_size=16,
+        batch_size=8,
         num_workers=cpu_count(),
     )
     dm.prepare_data()
     dm.setup()
     print(dm)
-    # batch = next(iter(dm.train_dataloader()))
+    batch = next(iter(dm.train_dataloader()))
 
     for i in range(batch["waveform"].shape[0]):
-        plot_batch_sample(waveform=w[i], vad=batch["vad"][i, :-100], vad_hz=dm.vad_hz)
+        plot_batch_sample(
+            waveform=batch["waveform"][i], vad=batch["vad"][i, :-100], vad_hz=dm.vad_hz
+        )
         plt.show()
-
-    # print("\nBATCH DATASET")
-    # batch = dm.val_dset[0]
-    # for k, v in batch.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(f"{k}: {tuple(v.shape)}")
-    #     else:
-    #         print(f"{k}: {v}")
-    # plot_batch_sample(
-    #     waveform=batch["waveform"][0],
-    #     vad=batch["vad"][0],
-    #     vad_hz=dm.vad_hz,
-    # )
-
-    # print("\nBATCH DATALOADER")
-    # batch = next(iter(dm.val_dataloader()))
-
-    # for batch in tqdm(dm.val_dataloader()):
-    #     continue
-
-    # for k, v in batch.items():
-    #     if isinstance(v, torch.Tensor):
-    #         print(f"{k}: {tuple(v.shape)}")
-    #     else:
-    #         print(f"{k}: {v}")
