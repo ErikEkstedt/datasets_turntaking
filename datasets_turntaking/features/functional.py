@@ -34,6 +34,9 @@ def mask_around_vad(
     else:
         if vad_hz != sample_rate:
             v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
+        if C == 1:
+            v_mask = v_mask.sum(-2).unsqueeze(1)
+
         waveform = waveform * v_mask[:, :, : waveform.shape[-1]] * scale
     return waveform
 
