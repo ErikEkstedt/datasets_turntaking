@@ -21,23 +21,34 @@ def mask_around_vad(
         vad.shape[-1] == 2
     ), f"Expects vad of shape (B, N_FRAMES, 2) but got {vad.shape}"
 
-    v_mask = vad.permute(0, 2, 1)
+    non_vad_mask = vad.permute(0, 2, 1).logical_not().float()  # -> B, 2, N_frames
 
     B, C, _ = waveform.shape
     if B > 1 and C > 1:
         w_tmp = einops.rearrange(waveform, "b c s -> (b c) s")
-        v_mask = einops.rearrange(v_mask, "b c f -> (b c) f")
+        non_vad_mask = einops.rearrange(non_vad_mask, "b c f -> (b c) f")
         if vad_hz != sample_rate:
-            v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
-        w_tmp = w_tmp * v_mask[:, : w_tmp.shape[-1]] * scale
+            non_vad_mask = AF.resample(
+                non_vad_mask, orig_freq=vad_hz, new_freq=sample_rate
+            )
+            non_vad_mask = non_vad_mask > 0.5
+        # z_mask *= scale
+        w_tmp[non_vad_mask] *= scale
+        # w_tmp = w_tmp * v_mask[:, : w_tmp.shape[-1]]
         waveform = einops.rearrange(w_tmp, "(b c) s -> b c s", b=B, c=C)
     else:
         if vad_hz != sample_rate:
-            v_mask = AF.resample(v_mask, orig_freq=vad_hz, new_freq=sample_rate)
+            non_vad_mask = AF.resample(
+                non_vad_mask, orig_freq=vad_hz, new_freq=sample_rate
+            )
         if C == 1:
-            v_mask = v_mask.sum(-2).unsqueeze(1)
+            non_vad_mask = non_vad_mask.sum(-2).unsqueeze(1)
 
-        waveform = waveform * v_mask[:, :, : waveform.shape[-1]] * scale
+        non_vad_mask = non_vad_mask > 0.5
+        non_vad_mask = non_vad_mask[..., : waveform.shape[-1]]
+        # z_mask *= scale
+        waveform[non_vad_mask] *= scale
+        # waveform = waveform * non_vad_mask[:, :, : waveform.shape[-1]]
     return waveform
 
 
@@ -219,7 +230,7 @@ def __lpc(y: torch.Tensor, order) -> torch.Tensor:
         # q = dtype(1) - reflect_coeff ** 2
         # den = q * den - bwd_pred_error[-1] ** 2 - fwd_pred_error[0] ** 2
 
-        q = 1.0 - reflect_coeff ** 2
+        q = 1.0 - reflect_coeff**2
         den = q * den - bwd_pred_error[..., -1] ** 2 - fwd_pred_error[..., 0] ** 2
 
         # Shift up forward error.
