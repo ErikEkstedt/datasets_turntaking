@@ -11,7 +11,11 @@ environ["DATASETS_VERBOSITY"] = "error"
 from datasets import concatenate_datasets
 
 
-from datasets_turntaking.dataset.spoken_dialog import load_fisher, load_switchboard
+from datasets_turntaking.dataset.spoken_dialog import (
+    load_fisher,
+    load_switchboard,
+    load_vacation_interview,
+)
 from datasets_turntaking.utils import (
     load_waveform,
     get_audio_info,
@@ -28,6 +32,8 @@ def load_spoken_dialog_audio_dataset(datasets: List[str], split: str, **kwargs):
             dset.append(load_fisher(split=split, format_turns=False, **kwargs))
         elif dataset == "switchboard":
             dset.append(load_switchboard(split=split, format_turns=False))
+        elif dataset == "vacation_interview":
+            dset.append(load_vacation_interview(split=split))
     assert (
         len(dset) > 0
     ), f"Must load at least one dataset ['fisher', 'switchboard']. Got {datasets}"

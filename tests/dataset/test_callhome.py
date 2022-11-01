@@ -1,6 +1,6 @@
 import pytest
 
-from datasets_turntaking.dataset.callhome.utils import callhome_regexp
+from datasets_turntaking.dataset.spoken_dialog.callhome.utils import callhome_regexp
 
 
 @pytest.mark.callhome

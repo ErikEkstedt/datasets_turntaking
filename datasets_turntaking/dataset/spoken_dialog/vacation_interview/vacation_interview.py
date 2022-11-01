@@ -44,7 +44,7 @@ class VacIntConfig(datasets.BuilderConfig):
         self.ext = ext
 
 
-class Fisher(datasets.GeneratorBasedBuilder):
+class VacationInterviews(datasets.GeneratorBasedBuilder):
     VERSION = datasets.Version("0.0.1")
     DEFAULT_CONFIG_NAME = "default"
     BUILDER_CONFIGS = [

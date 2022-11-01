@@ -31,7 +31,7 @@ class DialogAudioDM(pl.LightningDataModule):
         ipu_pause_time=0.2,
         sample_rate: int = 16000,
         vad: bool = True,
-        vad_hz: int = 100,
+        vad_hz: int = 50,
         vad_horizon: float = 2.0,
         vad_history: bool = False,
         vad_history_times: List[int] = [60, 30, 10, 5],
