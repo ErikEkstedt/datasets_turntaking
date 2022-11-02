@@ -3,7 +3,8 @@ from torch.utils.data import Dataset
 from typing import Any, Callable, Dict, Optional, List, Tuple, Union
 import torch
 
-import datasets_turntaking.features.functional as AF
+import datasets_turntaking.features.functional as DF
+import datasets_turntaking.features.transforms as DT
 
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
@@ -338,6 +339,8 @@ class DialogAudioDataset(Dataset):
         # Dset
         self.flip_channels = flip_channels
         self.flip_probability = flip_probability
+        if flip_channels:
+            self.batch_flipper = DT.FlipBatch()
 
         self.mask_vad = mask_vad
         self.mask_vad_probability = mask_vad_probability
@@ -389,24 +392,6 @@ class DialogAudioDataset(Dataset):
     def get_dialog_sample(self, idx) -> Dict[str, Any]:
         d = self.dataset[idx]
         return self.get_sample(d)
-
-    def flip_batch(self, batch):
-        """Flips the channels/speakers (for effected fields)"""
-        if "vad" in batch:
-            batch["vad"] = torch.stack(
-                (batch["vad"][..., 1], batch["vad"][..., 0]), dim=-1
-            )
-
-        if "vad_history" in batch:
-            batch["vad_history"] = 1 - batch["vad_history"]
-
-        if "waveform" in batch:
-            if batch["waveform"].shape[1] == 2:
-                batch["waveform"] = torch.stack(
-                    (batch["waveform"][:, 1], batch["waveform"][:, 0]), dim=1
-                )
-
-        return batch
 
     def get_sample(
         self, b, start_time: Optional[float] = None, end_time: Optional[float] = None
@@ -480,10 +465,10 @@ class DialogAudioDataset(Dataset):
             d["waveform"] = self.transforms(d["waveform"], vad=d["vad"][:, :n_frames])
 
         if self.flip_channels and torch.rand(1) <= self.flip_probability:
-            d = self.flip_batch(d)
+            d = self.batch_flipper(d)
 
         if self.mask_vad and torch.rand(1) <= self.mask_vad_probability:
-            d["waveform"] = AF.mask_around_vad(
+            d["waveform"] = DF.mask_around_vad(
                 d["waveform"],
                 d["vad"],
                 vad_hz=self.vad_hz,

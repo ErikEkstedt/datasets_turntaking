@@ -278,31 +278,25 @@ class DialogAudioDM(pl.LightningDataModule):
 if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
-    from tqdm import tqdm
-
     from datasets_turntaking.features.plot_utils import plot_batch_sample
-    import datasets_turntaking.features.transforms as DT
 
-    data_conf = DialogAudioDM.load_config()
-    dm = DialogAudioDM(
-        datasets=["fisher", "switchboard"],
-        type=data_conf["dataset"]["type"],
-        sample_rate=data_conf["dataset"]["sample_rate"],
-        audio_mono=False,  # data_conf["dataset"]["audio_mono"],
-        audio_duration=data_conf["dataset"]["audio_duration"],
-        audio_normalize=data_conf["dataset"]["audio_normalize"],
-        audio_overlap=data_conf["dataset"]["audio_overlap"],
-        vad_hz=data_conf["dataset"]["vad_hz"],
-        vad_horizon=data_conf["dataset"]["vad_horizon"],
-        vad_history=False,
-        vad_history_times=data_conf["dataset"]["vad_history_times"],
-        batch_size=8,
-        num_workers=cpu_count(),
-    )
+    data_conf = DialogAudioDM.load_config()["data"]
+    data_conf.pop("datasets")
+    data_conf["datasets"] = ["switchboard"]
+    data_conf["num_workers"] = 0
+    data_conf["batch_size"] = 4
+    dm = DialogAudioDM(**data_conf)
     dm.prepare_data()
+
     dm.setup()
+
     print(dm)
+
     batch = next(iter(dm.train_dataloader()))
+
+    for batch in dm.train_dataloader():
+        print(batch)
+        break
 
     for i in range(batch["waveform"].shape[0]):
         plot_batch_sample(

@@ -1,13 +1,17 @@
 import torch
 import torch.nn.functional as F
 import torchaudio.functional as AF
+import torchaudio.transforms as AT
 
 import einops
 
 
 SAMPLE_RATE: int = 16_000
 HOP_LENGTH: int = 320  # 0.02s @ 16khz
+N_FFT: int = 400
 FRAME_LENGTH: int = 800  # 0.05s @ 16khz
+F_MIN: int = 52  # slitghlty above 50hz microphone/electricity buzz
+F_MAX: int = 4000  # max frequency for 8kHz audio (switchboard)
 
 
 def mask_around_vad(
@@ -32,6 +36,7 @@ def mask_around_vad(
                 non_vad_mask, orig_freq=vad_hz, new_freq=sample_rate
             )
             non_vad_mask = non_vad_mask > 0.5
+        non_vad_mask = non_vad_mask[..., : waveform.shape[-1]]
         # z_mask *= scale
         w_tmp[non_vad_mask] *= scale
         # w_tmp = w_tmp * v_mask[:, : w_tmp.shape[-1]]
@@ -50,6 +55,30 @@ def mask_around_vad(
         waveform[non_vad_mask] *= scale
         # waveform = waveform * non_vad_mask[:, :, : waveform.shape[-1]]
     return waveform
+
+
+def log_mel_spectrogram(
+    waveform: torch.Tensor,
+    n_mels: int = 80,
+    n_fft: int = N_FFT,
+    hop_length: int = HOP_LENGTH,
+    f_min: int = F_MIN,
+    f_max: int = F_MAX,
+    sample_rate: int = SAMPLE_RATE,
+) -> torch.Tensor:
+    mel_spec = AT.MelSpectrogram(
+        sample_rate=sample_rate,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        n_mels=n_mels,
+        f_min=f_min,
+        f_max=f_max,
+        normalized=True,
+    )(waveform)
+    log_mel_spec = torch.clamp(mel_spec, min=1e-10).log10()
+    log_mel_spec = torch.maximum(log_mel_spec, log_mel_spec.max() - 8.0)
+    log_mel_spec = (log_mel_spec + 4.0) / 4.0
+    return log_mel_spec
 
 
 def zero_crossings(y: torch.Tensor) -> torch.Tensor:

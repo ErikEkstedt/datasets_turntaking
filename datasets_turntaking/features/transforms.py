@@ -2,9 +2,49 @@ import torch
 import torch.nn as nn
 import torchaudio.transforms as AT
 import einops
+from typing import Dict
 
-from datasets_turntaking.utils import time_to_samples
+from datasets_turntaking.utils import time_to_samples, time_to_frames
 import datasets_turntaking.features.functional as DF
+
+
+class LogMelSpectrogram(nn.Module):
+    def __init__(
+        self,
+        n_mels: int = 80,
+        window_time: float = 0.025,
+        hop_time: float = 0.05,
+        f_min: int = 55,
+        f_max: int = 4000,
+        sample_rate: int = 16_000,
+    ):
+        super().__init__()
+        self.n_fft = time_to_samples(window_time, sample_rate)
+        self.hop_length = time_to_samples(hop_time, sample_rate)
+        self.f_min = f_min
+        self.f_max = f_max
+
+        self.mel_spectrogram = AT.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            n_mels=n_mels,
+            f_min=f_min,
+            f_max=f_max,
+            normalized=True,
+        )
+
+    def __repr__(self) -> str:
+        s = "LogMelSpectrogram(\n"
+        s += str(self.mel_spectrogram)
+        return s
+
+    def forward(self, waveform: torch.Tensor) -> torch.Tensor:
+        mel_spec = self.mel_spectrogram(waveform)
+        log_mel_spec = torch.clamp(mel_spec, min=1e-10).log10()
+        log_mel_spec = torch.maximum(log_mel_spec, log_mel_spec.max() - 8.0)
+        log_mel_spec = (log_mel_spec + 4.0) / 4.0
+        return log_mel_spec
 
 
 class ProsodyTorch(nn.Module):
@@ -168,6 +208,41 @@ class VadMaskScale(nn.Module):
             sample_rate=self.sample_rate,
             scale=self.scale,
         )
+
+
+class FlipBatch(nn.Module):
+    flippable = ["waveform", "vad", "vad_history"]
+
+    def __init__(self):
+        super().__init__()
+
+    def flip_vad(self, vad: torch.Tensor) -> torch.Tensor:
+        return torch.stack((vad[..., 1], vad[..., 0]), dim=-1)
+
+    def flip_vad_history(self, vad_history: torch.Tensor) -> torch.Tensor:
+        return 1 - vad_history
+
+    def flip_waveform(self, waveform: torch.Tensor) -> torch.Tensor:
+        assert (
+            waveform.ndim == 3
+        ), f"Expected waveform (B, C, n_samples) but got {waveform.shape}"
+
+        if waveform.shape[1] == 2:
+            waveform = torch.stack((waveform[:, 1], waveform[:, 0]), dim=1)
+        return waveform
+
+    def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Flips the channels/speakers (for effected fields)"""
+        if "vad" in batch:
+            batch["vad"] = self.flip_vad(batch["vad"])
+
+        if "vad_history" in batch:
+            batch["vad_history"] = self.flip_vad_history(batch["vad_history"])
+
+        if "waveform" in batch:
+            batch["waveform"] = self.flip_waveform(batch["waveform"])
+
+        return batch
 
 
 if __name__ == "__main__":
