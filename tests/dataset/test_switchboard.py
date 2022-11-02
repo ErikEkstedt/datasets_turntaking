@@ -8,9 +8,9 @@ from datasets_turntaking import DialogAudioDM
     ["type", "vad", "vad_history", "vad_hz", "sample_rate"],
     [
         ("sliding", True, True, 100, 16000),
-        ("sliding", True, True, 10, 16000),
-        ("sliding", False, False, 100, 16000),
-        ("sliding", False, False, 100, 8000),
+        ("sliding", True, True, 50, 16000),
+        ("sliding", False, False, 50, 16000),
+        ("sliding", False, False, 50, 8000),
     ],
 )
 def test_dm(type, vad, vad_history, vad_hz, sample_rate):
@@ -18,18 +18,14 @@ def test_dm(type, vad, vad_history, vad_hz, sample_rate):
         datasets=["switchboard"],
         type=type,
         sample_rate=sample_rate,
-        audio_duration=10,
-        audio_normalize=True,
-        audio_overlap=5,
         vad_hz=vad_hz,
-        vad_horizon=2,
         vad_history=vad_history,
-        vad_history_times=[60, 30, 10, 5],
         batch_size=4,
         num_workers=0,
     )
     dm.prepare_data()
-    dm.setup(None)
+    dm.setup("fit")
+    dm.setup("test")
 
     N = 5
 

@@ -1,4 +1,5 @@
 import pytest
+import os
 from datasets_turntaking import DialogAudioDM
 
 
@@ -14,6 +15,11 @@ from datasets_turntaking import DialogAudioDM
     ],
 )
 def test_dm(type, vad, vad_history, vad_hz, sample_rate):
+
+    if not os.path.exists(
+        os.path.join(os.path.expanduser("~"), "projects/vacation_interview")
+    ):
+        return True
     dm = DialogAudioDM(
         datasets=["vacation_interview"],
         type=type,

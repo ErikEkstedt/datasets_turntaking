@@ -1,18 +1,25 @@
 import pytest
 from datasets_turntaking import DialogAudioDM
+import os
 
 
 @pytest.mark.fisher
 @pytest.mark.dm
 @pytest.mark.parametrize(
-        ["type", "vad", "vad_history", "vad_hz", "sample_rate"], 
-        [
-            ("sliding", True, True, 100, 16000), 
-            ("sliding", True, True, 10, 16000), 
-            ("sliding", False, False, 100, 16000),
-            ("sliding", False, False, 100, 8000)
-            ])
+    ["type", "vad", "vad_history", "vad_hz", "sample_rate"],
+    [
+        ("sliding", True, True, 100, 16000),
+        ("sliding", True, True, 10, 16000),
+        ("sliding", False, False, 100, 16000),
+        ("sliding", False, False, 100, 8000),
+    ],
+)
 def test_dm(type, vad, vad_history, vad_hz, sample_rate):
+
+    if not os.path.exists(
+        os.path.join(os.path.expanduser("~"), "projects/data/Fisher")
+    ):
+        return True
     dm = DialogAudioDM(
         datasets=["fisher"],
         type=type,
@@ -39,19 +46,18 @@ def test_dm(type, vad, vad_history, vad_hz, sample_rate):
             if ii == N:
                 break
     except Exception as e:
-        assert False, inputs+f"Validation dataloader broke {e}"
+        assert False, inputs + f"Validation dataloader broke {e}"
 
-    
     try:
         for ii, batch in enumerate(dm.train_dataloader()):
             if ii == N:
                 break
     except Exception as e:
-        assert False, inputs+f"Train dataloader broke {e}"
+        assert False, inputs + f"Train dataloader broke {e}"
 
     try:
         for ii, batch in enumerate(dm.test_dataloader()):
             if ii == N:
                 break
     except Exception as e:
-        assert False, inputs+f"Test dataloader broke {e}"
+        assert False, inputs + f"Test dataloader broke {e}"
