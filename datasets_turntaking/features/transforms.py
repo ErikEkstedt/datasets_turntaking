@@ -21,6 +21,7 @@ class LogMelSpectrogram(nn.Module):
         super().__init__()
         self.n_fft = time_to_samples(window_time, sample_rate)
         self.hop_length = time_to_samples(hop_time, sample_rate)
+        self.frame_hz = int(1 / hop_time)
         self.f_min = f_min
         self.f_max = f_max
 

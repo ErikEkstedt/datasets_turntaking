@@ -1,107 +1,84 @@
-from librosa.display import waveshow
+import matplotlib as mpl
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Union
 import matplotlib.pyplot as plt
 import torch
-from torch.nn import Sequential
-import torchaudio.transforms as AT
-import torchaudio.functional as AF
 
 
-def plot_waveform(waveform, ax, sample_rate=None):
-    if waveform.ndim == 2 and waveform.shape[0] == 2:
-        adaptor = waveshow(
-            waveform[0].numpy(),
-            sr=sample_rate,
-            color="b",
-            alpha=0.6,
-            ax=ax,
-            label="waveform A",
+def plot_stereo_mel_spec(
+    mel_spec: torch.Tensor,
+    ax: List[mpl.axes.Axes],
+    vad: Optional[Union[None, torch.Tensor]] = None,
+    no_ticks: bool = False,
+    cmap: str = "inferno",
+    interpolation: bool = True,
+    plot: bool = False,
+) -> List[mpl.axes.Axes]:
+
+    assert (
+        mel_spec.ndim == 3
+    ), f"Expects single channel waveform of shape (N_channels, N_MELS, N_Frames). Got: {mel_spec.shape}"
+
+    colors = ["b", "orange"]
+    n_channels, n_mels, n_frames = mel_spec.shape
+
+    for ch in range(n_channels):
+        tmp_vad = None
+        if vad is not None:
+            tmp_vad = vad[ch]
+
+        plot_mel_spec(
+            mel_spec[ch],
+            vad=tmp_vad,
+            ax=ax[ch],
+            no_ticks=no_ticks,
+            cmap=cmap,
+            vad_color=colors[ch],
+            interpolation=interpolation,
         )
-        adaptor = waveshow(
-            waveform[1].numpy(),
-            sr=sample_rate,
-            color="orange",
-            alpha=0.6,
-            ax=ax,
-            label="waveform B",
-        )
-    elif waveform.ndim == 1 or (waveform.ndim == 2 and waveform.shape[0] == 1):
-        adaptor = waveshow(
-            waveform.numpy(),
-            sr=sample_rate,
-            color="b",
-            alpha=0.6,
-            ax=ax,
-            label="waveform",
-        )
-    else:
-        raise NotImplementedError(f"Shape {waveform.shape} not implemented.")
-    ax.set_xlim([0, adaptor.times[-1]])
+    if plot:
+        plt.pause(0.1)
     return ax
 
 
-def plot_melspectrogram(
-    waveform: torch.Tensor,
-    ax: Axes,
+def plot_mel_spec(
+    mel_spec: torch.Tensor,
+    ax: mpl.axes.Axes,
     vad: Optional[torch.Tensor] = None,
-    vad_hz: Optional[int] = 50,
-    vad_color: str = "b",
-    hop_time: float = 0.01,
-    sample_rate: int = 16000,
-    n_mels: int = 80,
-    frame_time: float = 0.05,
-    top_db: int = 79,
-):
+    no_ticks: bool = False,
+    cmap: str = "viridis",
+    interpolation: bool = True,
+    vad_color: str = "blue",
+    plot: bool = False,
+) -> List[mpl.axes.Axes]:
     assert (
-        waveform.ndim == 1
-    ), f"Expects single channel waveform of shape (n_samples, ). Got: {waveform.shape}"
+        mel_spec.ndim == 2
+    ), f"Expects single channel waveform of shape (N_MELS, N_Frames). Got: {mel_spec.shape}"
 
-    # Features
-    frame_length = int(frame_time * sample_rate)
-    hop_length = int(hop_time * sample_rate)
-    melspec = Sequential(
-        AT.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=frame_length,
-            hop_length=hop_length,
-            n_mels=n_mels,
-        ),
-        AT.AmplitudeToDB(top_db=top_db),
-    )(waveform.detach().cpu())
+    n_mels, n_frames = mel_spec.shape
 
-    # im = ax.imshow(melspec, aspect="auto", interpolation="none", origin="lower")
-    im = ax.imshow(
-        melspec,
+    interp = None
+    if not interpolation:
+        interp = "none"
+
+    ax.imshow(
+        mel_spec,
         aspect="auto",
-        interpolation="none",
         origin="lower",
-        extent=(0, melspec.shape[1], 0, melspec.shape[0]),
+        interpolation=interp,
+        cmap=cmap,
+        vmin=-1.5,
+        vmax=1.5,
     )
-
     if vad is not None:
-        assert (
-            vad.ndim == 1
-        ), f"Expects vad of shape (n_frames,) but got {tuple(vad.shape)}"
-        assert vad_hz is not None, "vad_hz is required if mel_spec includes vad."
-        melspec_hz = int(1 / hop_time)
-        # melspec_sample_rate = int(sample_rate * hop_time)
-        if vad_hz != melspec_hz:
-            # vad: (n_frames, 2) -> (2, n_frames) -> (n_frames, 2)
-            new_vad = AF.resample(
-                vad,
-                orig_freq=vad_hz,
-                new_freq=melspec_hz,
-            )
-            new_vad[new_vad > 0.5] = 1
-            new_vad[new_vad <= 0] = 0
-        else:
-            new_vad = vad
-        lw = 4
-        ymax = n_mels - lw
-        ax.plot(new_vad * ymax, color=vad_color, linewidth=lw)
-    return melspec
+        ax.plot(vad[:n_frames] * (n_mels - 1), alpha=0.9, linewidth=5, color=vad_color)
+    if no_ticks:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    if plot:
+        plt.pause(0.1)
+    return ax
 
 
 def plot_vad_list(vad, end_time, target_time=None, ax=None, plot=True):
