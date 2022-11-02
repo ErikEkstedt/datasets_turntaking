@@ -1,6 +1,7 @@
 from os import environ
 from torch.utils.data import Dataset
 from typing import Any, Callable, Dict, Optional, List, Tuple, Union
+from tqdm import tqdm
 import torch
 
 import datasets_turntaking.features.functional as DF
@@ -165,6 +166,67 @@ def get_sliding_window_indices(dataset, clip_duration: float, audio_step_time: f
     return map_to_dset_idx, map_to_start
 
 
+def get_events_windows(
+    dataset, clip_duration: float, vad_hop_time: float, min_context_time: float
+):
+    from vap_turn_taking.events import TurnTakingEventsNew
+
+    eventer = TurnTakingEventsNew(
+        sh_pre_cond_time=1.0,
+        sh_post_cond_time=1.0,
+        sh_prediction_region_on_active=True,
+        bc_pre_cond_time=1.0,
+        bc_post_cond_time=1.0,
+        bc_max_duration=1.0,
+        bc_negative_pad_left_time=1.0,
+        bc_negative_pad_right_time=2.0,
+        prediction_region_time=0.5,
+        long_onset_region_time=0.2,
+        long_onset_condition_time=1.0,
+        min_context_time=min_context_time,
+        metric_time=0.1,
+        metric_pad_time=0.05,
+        max_time=9999,
+        frame_hz=50,
+        equal_hold_shift=True,
+    )
+
+    map_to_dset_idx = []
+    map_to_start = []
+    for dataset_idx, d in tqdm(
+        enumerate(dataset), total=len(dataset), desc="find events"
+    ):
+        # d = dataset[1]
+        vad_list = d["vad_list"]
+        duration = get_audio_info(d["audio_path"])["duration"]
+        va, _ = get_vad(
+            vad_list=vad_list,
+            duration=duration,
+            start_time=0,
+            end_time=duration,
+            hop_time=vad_hop_time,
+            horizon_time=0,
+            history_include=False,
+        )
+        events = eventer(va, max_time=duration)
+        interesting = events["shift"][0] + events["short"][0]
+        interesting.sort()
+        interesting = torch.tensor(interesting)[:, :-1]
+        # convert to time from frames
+        interesting = (interesting * vad_hop_time).round()
+        # subtract the context
+        inter = interesting - min_context_time
+        # TODO: Something something add as many events in single clip as possible
+        # maybe using: diff = inter[1:] - inter[:-1]
+        for start in inter[:, 0]:
+            if start + clip_duration > duration:
+                start = duration - clip_duration
+            map_to_dset_idx.append(dataset_idx)
+            map_to_start.append(start)
+    return map_to_dset_idx, map_to_start
+
+
+# This was not faster than original way...
 def vad_list_to_oh(
     vad_list: List[List[Tuple[float, float]]],
     hop_time: float,
@@ -234,7 +296,6 @@ def get_vad(
     history_include: bool = False,
     history_times: List[int] = [60, 30, 10, 5],
 ) -> Tuple[torch.Tensor, Union[torch.Tensor, None]]:
-
     start_frame = time_to_frames(start_time, hop_time)
     end_frame = time_to_frames(end_time, hop_time)
     horizon_frames = time_to_frames(horizon_time, hop_time)
@@ -302,6 +363,7 @@ class DialogAudioDataset(Dataset):
         flip_probability: float = 0.5,
         mask_vad: bool = False,
         mask_vad_probability: float = 0.5,
+        mask_vad_scale: float = 0.1,
         transforms: Optional[Callable] = None,
     ):
         super().__init__()
@@ -344,6 +406,7 @@ class DialogAudioDataset(Dataset):
 
         self.mask_vad = mask_vad
         self.mask_vad_probability = mask_vad_probability
+        self.mask_vad_scale = mask_vad_scale
 
         self.map_to_dset_idx, self.map_to_start_time = self.get_sample_maps(type)
 
@@ -356,6 +419,13 @@ class DialogAudioDataset(Dataset):
                 ipu_pause_time=self.ipu_pause_time,
                 ipu_min_time=self.ipu_min_time,
                 audio_context_time=self.audio_context_time,
+            )
+        elif type == "events":
+            map_to_dset_idx, map_to_start_time = get_events_windows(
+                self.dataset,
+                clip_duration=self.audio_duration,
+                vad_hop_time=self.vad_hop_time,
+                min_context_time=self.audio_duration // 2,
             )
         else:
             map_to_dset_idx, map_to_start_time = get_sliding_window_indices(
@@ -460,20 +530,23 @@ class DialogAudioDataset(Dataset):
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
 
-        if self.transforms is not None:
-            n_frames = d["vad_history"].shape[1]
-            d["waveform"] = self.transforms(d["waveform"], vad=d["vad"][:, :n_frames])
-
-        if self.flip_channels and torch.rand(1) <= self.flip_probability:
-            d = self.batch_flipper(d)
-
         if self.mask_vad and torch.rand(1) <= self.mask_vad_probability:
             d["waveform"] = DF.mask_around_vad(
                 d["waveform"],
                 d["vad"],
                 vad_hz=self.vad_hz,
                 sample_rate=self.sample_rate,
+                scale=self.mask_vad_scale,
             )
+
+        if self.transforms is not None:
+            # n_frames = d["vad"].shape[1] - self.vad_horizon
+            # d["waveform"] = self.transforms(d["waveform"], vad=d["vad"][:, :n_frames])
+            d["waveform"] = self.transforms(d["waveform"])
+
+        if self.flip_channels and torch.rand(1) <= self.flip_probability:
+            d = self.batch_flipper(d)
+
         return d
 
 
@@ -481,12 +554,13 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from datasets_turntaking.features.plot_utils import plot_batch_sample
 
-    dset_hf = load_spoken_dialog_audio_dataset(
-        ["fisher", "switchboard"], split="val", min_word_vad_diff=0.1
+    dataset = load_spoken_dialog_audio_dataset(
+        ["switchboard"], split="val", min_word_vad_diff=0.1
     )
     dset = DialogAudioDataset(
-        dataset=dset_hf,
-        type="sliding",
+        dataset=dataset,
+        # type="sliding",
+        type="events",
         vad_history=False,
         vad_hz=50,
         audio_mono=False,
