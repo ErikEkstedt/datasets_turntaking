@@ -1,22 +1,17 @@
-dataset:
-  datasets: ["switchboard"]
+data:
+  datasets: ["switchboard", "fisher"]
   type: "sliding"
-  sample_rate: 16000
-  audio_mono: true
+  sample_rate: 16_000
   audio_duration: 10
-  audio_normalize: true
-  # Sliding Dataset
+  audio_normalize: False
   audio_overlap: 2
-  # IPU Dataset
-  audio_context_duration: 5 # minimum context before ipu-end to count
-  ipu_min_time: 1 # ipus must be longer than this to count
-  ipu_pause_time: 0.2 # pause length must be longer than this to count
-  # VAD
   vad_hz: 50
   vad_horizon: 2
-  vad_history: true
+  vad_history: False
   vad_history_times: [60, 30, 10, 5]
   flip_channels: true
   flip_probability: 0.5
   mask_vad: true
-  mask_vad_probability: 0.3
+  mask_vad_probability: 0.5
+  batch_size: 16
+  num_workers: 24
