@@ -234,8 +234,10 @@ def get_events_windows(
         events = eventer(va, max_time=duration)
 
         interesting = events["shift"][0] + events["short"][0]
+        if len(interesting) == 0:
+            continue
         interesting.sort()
-        interesting = torch.tensor(interesting)[:, :-1]
+        interesting = torch.tensor(interesting)[:, :-1]  # 'remove' speaker column
         # convert to time from frames
         interesting = (interesting * vad_hop_time).round()
         # subtract the context
