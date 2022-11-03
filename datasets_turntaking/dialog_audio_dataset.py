@@ -484,6 +484,8 @@ class DialogAudioDataset(Dataset):
         # Dset
         s += f"\n\tflip_channels: {self.flip_channels}"
         s += f"\n\tflip_probability: {self.flip_probability}"
+        s += f"\n\tmask_vad: {self.mask_vad}"
+        s += f"\n\tmask_vad_probability: {self.mask_vad_probability}"
         s += "\n" + "-" * 40
         return s
 

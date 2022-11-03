@@ -234,7 +234,12 @@ class DialogAudioDM(pl.LightningDataModule):
             s += str(self.train_dset)
         elif hasattr(self, "test_dset"):
             s += "\n\t" + ("-" * 10) + "\n"
-            s += str(self.train_dset)
+            s += str(self.test_dset)
+        else:
+            s += f"\n\tflip_channels: {self.flip_channels}"
+            s += f"\n\tflip_probability: {self.flip_probability}"
+            s += f"\n\tmask_vad: {self.mask_vad}"
+            s += f"\n\tmask_vad_probability: {self.mask_vad_probability}"
         return s
 
     @staticmethod
