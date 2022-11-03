@@ -1,4 +1,5 @@
-from os import environ
+from os import environ, makedirs
+from os.path import join, exists
 from torch.utils.data import Dataset
 from typing import Any, Callable, Dict, Optional, List, Tuple, Union
 from tqdm import tqdm
@@ -6,6 +7,7 @@ import torch
 
 import datasets_turntaking.features.functional as DF
 import datasets_turntaking.features.transforms as DT
+from datasets_turntaking.utils import read_json, write_json
 
 # omit verbose `datasets` info
 # WARNING: Setting verbosity level by hand...
@@ -167,35 +169,56 @@ def get_sliding_window_indices(dataset, clip_duration: float, audio_step_time: f
 
 
 def get_events_windows(
-    dataset, clip_duration: float, vad_hop_time: float, min_context_time: float
+    dataset,
+    clip_duration: float,
+    vad_hop_time: float,
+    min_context_time: float,
+    savepath="data",
 ):
     from vap_turn_taking.events import TurnTakingEventsNew
 
-    eventer = TurnTakingEventsNew(
-        sh_pre_cond_time=1.0,
-        sh_post_cond_time=1.0,
-        sh_prediction_region_on_active=True,
-        bc_pre_cond_time=1.0,
-        bc_post_cond_time=1.0,
-        bc_max_duration=1.0,
-        bc_negative_pad_left_time=1.0,
-        bc_negative_pad_right_time=2.0,
-        prediction_region_time=0.5,
-        long_onset_region_time=0.2,
-        long_onset_condition_time=1.0,
-        min_context_time=min_context_time,
-        metric_time=0.1,
-        metric_pad_time=0.05,
-        max_time=9999,
-        frame_hz=50,
-        equal_hold_shift=True,
-    )
+    # Can't tell which split we are (we are simply a dataset)
+    # so we approximate the "type" of data by num_rows
+    dsets = dataset.unique("dataset")
+    dsets.sort()
+    dsets = "_".join(dsets)  # e.g. fisher_switchboard
+    name = dsets + f"_{dataset.num_rows}"
+    name += f"_ad{clip_duration}_mc{min_context_time}"
+
+    makedirs(savepath, exist_ok=True)
+    filename = join(savepath, name + ".json")
+    if exists(filename):
+        clips = read_json(filename)
+        print("Loaded events datasamples -> ", filename)
+        return clips["map_to_dset_idx"], clips["map_to_start"]
+
+    event_conf = {
+        "sh_pre_cond_time": 1.0,
+        "sh_post_cond_time": 1.0,
+        "sh_prediction_region_on_active": True,
+        "bc_pre_cond_time": 1.0,
+        "bc_post_cond_time": 1.0,
+        "bc_max_duration": 1.0,
+        "bc_negative_pad_left_time": 1.0,
+        "bc_negative_pad_right_time": 2.0,
+        "prediction_region_time": 0.5,
+        "long_onset_region_time": 0.2,
+        "long_onset_condition_time": 1.0,
+        "min_context_time": min_context_time,
+        "metric_time": 0.05,
+        "metric_pad_time": 0.0,
+        "max_time": 9999,
+        "frame_hz": 50,
+        "equal_hold_shift": True,
+    }
+    eventer = TurnTakingEventsNew(**event_conf)
 
     map_to_dset_idx = []
     map_to_start = []
     for dataset_idx, d in tqdm(
         enumerate(dataset), total=len(dataset), desc="find events"
     ):
+
         # d = dataset[1]
         vad_list = d["vad_list"]
         duration = get_audio_info(d["audio_path"])["duration"]
@@ -209,6 +232,7 @@ def get_events_windows(
             history_include=False,
         )
         events = eventer(va, max_time=duration)
+
         interesting = events["shift"][0] + events["short"][0]
         interesting.sort()
         interesting = torch.tensor(interesting)[:, :-1]
@@ -219,10 +243,15 @@ def get_events_windows(
         # TODO: Something something add as many events in single clip as possible
         # maybe using: diff = inter[1:] - inter[:-1]
         for start in inter[:, 0]:
+            start = start.item()
             if start + clip_duration > duration:
                 start = duration - clip_duration
             map_to_dset_idx.append(dataset_idx)
             map_to_start.append(start)
+    write_json(
+        {"map_to_dset_idx": map_to_dset_idx, "map_to_start": map_to_start}, filename
+    )
+    print("Saved events datasamples -> ", filename)
     return map_to_dset_idx, map_to_start
 
 
