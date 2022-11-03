@@ -28,7 +28,7 @@ def test_log_mel_spec(data):
             data["bc"]["waveform"],
         )
     )
-    t = DT.LogMelSpectrogram()
+    t = DT.LogMelSpectrogram().to(waveform.device)
     mel_spec = t(waveform)
 
 

@@ -74,7 +74,7 @@ def log_mel_spectrogram(
         f_min=f_min,
         f_max=f_max,
         normalized=True,
-    )(waveform)
+    ).to(waveform.device)(waveform)
     log_mel_spec = torch.clamp(mel_spec, min=1e-10).log10()
     log_mel_spec = torch.maximum(log_mel_spec, log_mel_spec.max() - 8.0)
     log_mel_spec = (log_mel_spec + 4.0) / 4.0
@@ -259,7 +259,7 @@ def __lpc(y: torch.Tensor, order) -> torch.Tensor:
         # q = dtype(1) - reflect_coeff ** 2
         # den = q * den - bwd_pred_error[-1] ** 2 - fwd_pred_error[0] ** 2
 
-        q = 1.0 - reflect_coeff**2
+        q = 1.0 - reflect_coeff ** 2
         den = q * den - bwd_pred_error[..., -1] ** 2 - fwd_pred_error[..., 0] ** 2
 
         # Shift up forward error.
