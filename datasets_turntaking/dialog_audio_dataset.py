@@ -184,7 +184,8 @@ def get_events_windows(
     clip_duration: float,
     vad_hop_time: float,
     min_context_time: float,
-    savepath="data",
+    include_bc: bool = False,
+    savepath: str = "data",
 ):
     """
     https://github.com/pytorch/pytorch/issues/13246#issuecomment-893198671
@@ -197,6 +198,8 @@ def get_events_windows(
     dsets.sort()
     dsets = "_".join(dsets)  # e.g. fisher_switchboard
     name = dsets + f"_{dataset.num_rows}"
+    if include_bc:
+        name += f"_bc"
     name += f"_ad{clip_duration}_mc{min_context_time}"
 
     makedirs(savepath, exist_ok=True)
@@ -247,9 +250,13 @@ def get_events_windows(
         )
         events = eventer(va, max_time=duration)
 
-        interesting = events["shift"][0] + events["short"][0]
+        interesting = events["shift"][0]
+        if include_bc:
+            interesting += events["short"][0]
+
         if len(interesting) == 0:
             continue
+
         interesting.sort()
         interesting = torch.tensor(interesting)[:, :-1]  # 'remove' speaker column
         # convert to time from frames
@@ -604,15 +611,18 @@ if __name__ == "__main__":
     from datasets_turntaking.features.plot_utils import plot_batch_sample
 
     dataset = load_spoken_dialog_audio_dataset(
-        ["switchboard"], split="val", min_word_vad_diff=0.1
+        ["switchboard", "fisher"], split="train", min_word_vad_diff=0.1
     )
 
-    # map_to_dset_idx, map_to_start_time = get_events_windows(
-    #     dataset,
-    #     clip_duration=20,
-    #     vad_hop_time=0.05,
-    #     min_context_time=10,
-    # )
+    # 23600, train: 28471
+    # val: 2693, train: 6391
+    # val: 6675, train: 6391
+    map_to_dset_idx, map_to_start_time = get_events_windows(
+        dataset,
+        clip_duration=20,
+        vad_hop_time=0.05,
+        min_context_time=10,
+    )
 
     dset = DialogAudioDataset(
         dataset=dataset,
