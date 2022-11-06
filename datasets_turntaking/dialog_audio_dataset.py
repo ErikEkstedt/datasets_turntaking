@@ -29,6 +29,17 @@ from datasets_turntaking.utils import (
 from vap_turn_taking.utils import vad_list_to_onehot, get_activity_history
 
 
+"""
+Dataset speed/memory/distributed
+
+Source: https://github.com/pytorch/pytorch/issues/13246#issuecomment-905703662
+
+* [x] Use tensors/arrays instead of lists:
+    - https://github.com/pytorch/pytorch/issues/13246#issuecomment-893198671
+
+"""
+
+
 def load_spoken_dialog_audio_dataset(datasets: List[str], split: str, **kwargs):
     dset = []
     for dataset in datasets:
@@ -175,6 +186,9 @@ def get_events_windows(
     min_context_time: float,
     savepath="data",
 ):
+    """
+    https://github.com/pytorch/pytorch/issues/13246#issuecomment-893198671
+    """
     from vap_turn_taking.events import TurnTakingEventsNew
 
     # Can't tell which split we are (we are simply a dataset)
@@ -462,7 +476,7 @@ class DialogAudioDataset(Dataset):
             map_to_dset_idx, map_to_start_time = get_sliding_window_indices(
                 self.dataset, self.audio_duration, self.audio_step_time
             )
-        return map_to_dset_idx, map_to_start_time
+        return torch.tensor(map_to_dset_idx), torch.tensor(map_to_start_time)
 
     def __repr__(self) -> str:
         s = "DialogSlidingWindow"
@@ -559,8 +573,8 @@ class DialogAudioDataset(Dataset):
             dataset:        str, name of dataset
             session:        str, name/id of session
         """
-        dset_idx = self.map_to_dset_idx[idx]
-        start_time = self.map_to_start_time[idx]
+        dset_idx = self.map_to_dset_idx[idx].item()
+        start_time = self.map_to_start_time[idx].item()
         end_time = start_time + self.audio_duration
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
@@ -592,6 +606,14 @@ if __name__ == "__main__":
     dataset = load_spoken_dialog_audio_dataset(
         ["switchboard"], split="val", min_word_vad_diff=0.1
     )
+
+    # map_to_dset_idx, map_to_start_time = get_events_windows(
+    #     dataset,
+    #     clip_duration=20,
+    #     vad_hop_time=0.05,
+    #     min_context_time=10,
+    # )
+
     dset = DialogAudioDataset(
         dataset=dataset,
         # type="sliding",
@@ -608,17 +630,18 @@ if __name__ == "__main__":
     for idx in range(10):
         # idx = int(torch.randint(0, len(dset), (1,)).item())
         batch = dset[idx]
+        print(idx)
         # w = DF.mask_around_vad(
         #     batch["waveform"], batch["vad"][:, :-100], vad_hz=50, sample_rate=16000
         # )
         # w = masker(batch["waveform"], batch["vad"])
         # batch['waveform'] = waveform_mask_with_vad(batch['waveform'], batch['vad'][:, :-100])
-        fig, ax = plot_batch_sample(
-            waveform=batch["waveform"][0],
-            # waveform=w[0],
-            vad=batch["vad"][0, :-100],
-            sample_rate=dset.sample_rate,
-            plot=False,
-        )
-        # sd.play(batch["waveform"][0].t().numpy(), samplerate=16000)
-        plt.show()
+        # fig, ax = plot_batch_sample(
+        #     waveform=batch["waveform"][0],
+        #     # waveform=w[0],
+        #     vad=batch["vad"][0, :-100],
+        #     sample_rate=dset.sample_rate,
+        #     plot=False,
+        # )
+        # # sd.play(batch["waveform"][0].t().numpy(), samplerate=16000)
+        # plt.show()
