@@ -410,6 +410,7 @@ class DialogAudioDataset(Dataset):
         self.audio_step_time = audio_duration - audio_overlap
         self.audio_normalize = audio_normalize
         self.audio_normalize_threshold = 0.05
+        self.n_samples = sample_rate * audio_duration
 
         # VAD parameters
         self.vad = True  # use vad or not
@@ -419,7 +420,6 @@ class DialogAudioDataset(Dataset):
         # Vad prediction labels
         self.horizon_time = vad_horizon_time
         self.vad_horizon = time_to_frames(vad_horizon_time, hop_time=self.vad_hop_time)
-
         # Vad history
         self.vad_history = vad_history
         self.vad_history_times = vad_history_times
@@ -523,6 +523,8 @@ class DialogAudioDataset(Dataset):
             normalize=self.audio_normalize,
             mono=self.audio_mono,
         )
+        # TODO: why did an entry yield 32_000_2 instead of 32_000_0?
+        ret["waveform"] = ret["waveform"][..., : self.n_samples]
 
         # VAD-frame of relevant part
         if self.vad:
