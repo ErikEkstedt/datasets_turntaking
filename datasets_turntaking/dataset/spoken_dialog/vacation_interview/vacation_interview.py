@@ -1,14 +1,14 @@
+from os.path import join, expanduser
 from typing import List
 import datasets
-from datasets import Value, Sequence
+import os
 
-from datasets_turntaking.utils import read_txt, read_json
+from datasets_turntaking.dataset import DIALOG_AUDIO_FEATURES
 
 from .utils import (
     extract_vad_list,
     get_sessions,
     get_paths,
-    get_vad_path,
     load_transcript,
 )
 
@@ -19,25 +19,9 @@ _CITATION = ""
 _DESCRIPTION = "TurnGPT Projection: Vacation Interviews"
 
 TOTAL_FILES = 20
-FEATURES = {
-    "session": Value("string"),
-    "audio_path": Value("string"),
-    "vad": [
-        [Sequence(Value("float"))],
-    ],
-    "dialog": [
-        Sequence(
-            {
-                "start": Value("float"),
-                "end": Value("float"),
-                "text": Value("string"),
-            }
-        )
-    ],
-}
 
 
-class VacIntConfig(datasets.BuilderConfig):
+class VacationInterviewConfig(datasets.BuilderConfig):
     def __init__(self, root, ext=".wav", **kwargs):
         super().__init__(**kwargs)
         self.root = root
@@ -47,11 +31,12 @@ class VacIntConfig(datasets.BuilderConfig):
 class VacationInterviews(datasets.GeneratorBasedBuilder):
     VERSION = datasets.Version("0.0.1")
     DEFAULT_CONFIG_NAME = "default"
+    BUILDER_CONFIG_CLASS = VacationInterviewConfig
     BUILDER_CONFIGS = [
-        VacIntConfig(
-            root="/home/erik/projects/data/projection_dialogs",
+        VacationInterviewConfig(
             name="default",
-            description="",
+            root=join(expanduser("~"), "projects/data/vacation_interview"),
+            description="Vacation Interview Dataset",
         )
     ]
 
@@ -60,7 +45,7 @@ class VacationInterviews(datasets.GeneratorBasedBuilder):
             description=_DESCRIPTION,
             homepage=_HOMEPAGE,
             citation=_CITATION,
-            features=datasets.Features(FEATURES),
+            features=datasets.Features(DIALOG_AUDIO_FEATURES),
             supervised_keys=None,
         )
 
@@ -70,27 +55,20 @@ class VacationInterviews(datasets.GeneratorBasedBuilder):
             datasets.SplitGenerator(
                 name=datasets.Split.TRAIN,
                 gen_kwargs={"sessions": sessions},
-            ),
-            datasets.SplitGenerator(
-                name=datasets.Split.VALIDATION,
-                gen_kwargs={"sessions": sessions},
-            ),
-            datasets.SplitGenerator(
-                name=datasets.Split.TEST,
-                gen_kwargs={"sessions": sessions},
-            ),
+            )
         ]
 
     def generate(self, sessions):
         for session in sessions:
-            trans_path, audio_path, vad_path = get_paths(session, self.config.root)
-            anno = load_transcript(trans_path)
-            vad = read_json(vad_path)
+            audio_path, dialog_path = get_paths(self.config.root, session)
+            dialog = load_transcript(dialog_path)
+            vad_list = extract_vad_list(dialog)
             yield f"{session}", {
                 "session": session,
                 "audio_path": audio_path,
-                "vad": vad,
-                "dialog": anno,
+                "dialog": dialog,
+                "vad_list": vad_list,
+                "dataset": "vacation_interview",
             }
 
     def _generate_examples(self, sessions):

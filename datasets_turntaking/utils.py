@@ -51,12 +51,11 @@ def load_waveform(
     sample_rate: Optional[int] = None,
     start_time: Optional[float] = None,
     end_time: Optional[float] = None,
-    normalize: bool = False,
     mono: bool = False,
     audio_normalize_threshold: float = 0.05,
 ) -> Tuple[torch.Tensor, int]:
     if start_time is None:
-        x, sr = torchaudio.load(path, normalize=False)
+        x, sr = torchaudio.load(path, normalize=True)
     else:
         info = get_audio_info(path)
         frame_offset = time_to_samples(start_time, info["sample_rate"])
@@ -66,7 +65,7 @@ def load_waveform(
         else:
             num_frames = num_frames - frame_offset
         x, sr = torchaudio.load(
-            path, frame_offset=frame_offset, num_frames=num_frames, normalize=False
+            path, frame_offset=frame_offset, num_frames=num_frames, normalize=True
         )
 
     # if normalize:

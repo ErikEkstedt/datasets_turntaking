@@ -1,30 +1,26 @@
 from os.path import join, basename, exists
 from glob import glob
-
 from datasets_turntaking.utils import read_json
 
 
 SPEAKER2CHANNEL = {"agent": 0, "user": 1}
 
+AGENTS = ["baseline", "prediction"]
+
 
 def get_sessions(root):
-    return [
-        basename(d).replace(".json", "") for d in glob(join(root, "dialogs/*.json"))
-    ]
+    sessions = []
+    for session in [basename(d) for d in glob(join(root, "session*"))]:
+        for agent in AGENTS:
+            sessions.append(session + "/" + agent)
+    sessions.sort()
+    return sessions
 
 
-def get_paths(session, root):
-    audio_path = join(root, "audio", session + ".wav")
-    transcript = join(root, "dialogs", session + ".json")
-    vad_path = join(root, "vad", session + ".json")
-    return transcript, audio_path, vad_path
-
-
-def get_vad_path(session, root):
-    vad_path = join(root, "vad", session + ".json")
-    if exists(vad_path):
-        return vad_path
-    return False
+def get_paths(root, session):
+    audio_path = join(root, session, "dialog.wav")
+    dialog_path = join(root, session, "dialog.json")
+    return audio_path, dialog_path
 
 
 def load_transcript(path):
@@ -46,29 +42,24 @@ def extract_vad_list(anno):
     vad = [[], []]
     for channel in [0, 1]:
         for utt in anno[channel]:
-            s, e = utt["start"], utt["end"]
+            s, e = round(utt["start"], 2), round(utt["end"], 2)
             vad[channel].append((s, e))
     return vad
 
 
 if __name__ == "__main__":
-
     from datasets_turntaking.utils import load_waveform, read_json
-    import sounddevice as sd
+    from os import listdir
+    from os.path import expanduser
 
-    root = "/home/erik/projects/data/projection_dialogs"
-
+    root = join(expanduser("~"), "projects/data/vacation_interview")
+    listdir(root)
     sessions = get_sessions(root)
+    print(sessions)
 
-    p = get_vad_path("session_0_baseline", root)
-    read_json(p)
-
-    sessions = get_sessions(root)
-    session = sessions[0]
-    path, audio_path, vad_path = get_paths(session, root)
-
-    anno = load_transcript(path)
-    vad = read_json(vad_path)
-
-    x, sr = load_waveform(audio_path, normalize=True)
-    sd.play(x[1], samplerate=sr)
+    for session in sessions:
+        audio_path, dialog_path = get_paths(root, session)
+        waveform, sr = load_waveform(audio_path, sample_rate=16000)
+        dialog = load_transcript(dialog_path)
+        vad_list = extract_vad_list(dialog)
+        break

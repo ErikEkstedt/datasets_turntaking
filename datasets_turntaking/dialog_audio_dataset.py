@@ -179,6 +179,15 @@ def get_sliding_window_indices(dataset, clip_duration: float, audio_step_time: f
     return map_to_dset_idx, map_to_start
 
 
+def get_full_indices(dataset):
+    map_to_dset_idx = []
+    map_to_start = []
+    for i in range(len(dataset)):
+        map_to_dset_idx.append(i)
+        map_to_start.append(0)
+    return map_to_dset_idx, map_to_start
+
+
 def get_events_windows(
     dataset,
     clip_duration: float,
@@ -390,6 +399,8 @@ def get_vad(
 
 
 class DialogAudioDataset(Dataset):
+    TYPES = ["sliding", "events", "full"]
+
     def __init__(
         self,
         dataset,
@@ -422,6 +433,7 @@ class DialogAudioDataset(Dataset):
         self.dataset = dataset  # Hugginface datasets
         self.feature_extractor = feature_extractor
         self.transforms = transforms
+        self.dset_type = type
 
         # Audio (waveforms)
         self.sample_rate = sample_rate
@@ -462,7 +474,9 @@ class DialogAudioDataset(Dataset):
 
         self.map_to_dset_idx, self.map_to_start_time = self.get_sample_maps(type)
 
-    def get_sample_maps(self, type: str = "sliding") -> Tuple[List[Any], List[Any]]:
+    def get_sample_maps(
+        self, type: str = "sliding"
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         if type == "ipu":
             map_to_dset_idx, map_to_start_time = get_ipu_indices(
                 self.dataset,
@@ -479,6 +493,8 @@ class DialogAudioDataset(Dataset):
                 vad_hop_time=self.vad_hop_time,
                 min_context_time=self.audio_duration // 2,
             )
+        elif type == "full":
+            map_to_dset_idx, map_to_start_time = get_full_indices(self.dataset)
         else:
             map_to_dset_idx, map_to_start_time = get_sliding_window_indices(
                 self.dataset, self.audio_duration, self.audio_step_time
@@ -541,11 +557,12 @@ class DialogAudioDataset(Dataset):
             sample_rate=self.sample_rate,
             start_time=start_time,
             end_time=end_time,
-            normalize=self.audio_normalize,
             mono=self.audio_mono,
         )
         # TODO: why did an entry yield 32_000_2 instead of 32_000_0?
-        ret["waveform"] = ret["waveform"][..., : self.n_samples]
+
+        if not self.dset_type == "full":
+            ret["waveform"] = ret["waveform"][..., : self.n_samples]
 
         # VAD-frame of relevant part
         if self.vad:
@@ -582,7 +599,9 @@ class DialogAudioDataset(Dataset):
         """
         dset_idx = self.map_to_dset_idx[idx].item()
         start_time = self.map_to_start_time[idx].item()
-        end_time = start_time + self.audio_duration
+        end_time = (
+            None if self.dset_type == "full" else start_time + self.audio_duration
+        )
         b = self.dataset[dset_idx]
         d = self.get_sample(b, start_time, end_time)
 
@@ -611,29 +630,24 @@ if __name__ == "__main__":
     from datasets_turntaking.features.plot_utils import plot_batch_sample
 
     dataset = load_spoken_dialog_audio_dataset(
-        ["switchboard", "fisher"], split="train", min_word_vad_diff=0.1
+        # ["switchboard", "fisher"], split="train", min_word_vad_diff=0.1
+        ["vacation_interview"],
+        split="train",
+        min_word_vad_diff=0.1,
     )
-
-    # 23600, train: 28471
-    # val: 2693, train: 6391
-    # val: 6675, train: 6391
-    map_to_dset_idx, map_to_start_time = get_events_windows(
-        dataset,
-        clip_duration=20,
-        vad_hop_time=0.05,
-        min_context_time=10,
-    )
-
     dset = DialogAudioDataset(
         dataset=dataset,
         # type="sliding",
-        type="events",
+        # type="events",
+        type="full",
         vad_history=False,
         vad_hz=50,
         audio_mono=False,
         mask_vad=False,
         mask_vad_probability=0.5,
     )
+    d = dset[0]
+    print("waveform: ", tuple(d["waveform"].shape))
 
     print("dset: ", dset)
     print("Length: ", len(dset))
