@@ -93,13 +93,11 @@ def load_fisher(
     return dset
 
 
-def load_callhome(split="train"):
-    if split == "val":
-        split = "validation"
-    raise NotImplementedError("Callhome is not tested")
-
-
 def load_vacation_interview(split="train"):
+    return load_dataset(DSET_PATHS["vacation_interview"], split="train")
+
+
+def load_callhome(split="train"):
     if split == "val":
         split = "validation"
     raise NotImplementedError("Callhome is not tested")
